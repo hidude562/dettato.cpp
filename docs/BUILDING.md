@@ -3,10 +3,11 @@
 ## Requirements
 
 - CMake 3.24 or later.
-- A C++23 compiler with `std::expected`: GCC 13+, Clang 17+, Apple Clang 15+ (Xcode 15), or MSVC 19.38+ (Visual Studio
-  2022 17.8).
-- For the GPU: the Vulkan SDK (headers, loader and `glslc`; on Ubuntu `apt install libvulkan-dev glslc`), or Xcode for
-  Metal. Without either, the CPU backend is built.
+- A C++23 compiler and standard library with `std::expected`: GCC 13+, Clang 19+ (with GCC's libstdc++, older Clang
+  versions do not get `std::expected`; with libc++, Clang 17+), Apple Clang 15+ (Xcode 15), or MSVC 19.38+ (Visual
+  Studio 2022 17.8).
+- For the GPU: the Vulkan SDK (headers, loader, SPIR-V headers and `glslc`; on Ubuntu
+  `apt install libvulkan-dev spirv-headers glslc`), or Xcode for Metal. Without either, the CPU backend is built.
 
 ggml v1.0.0 is fetched at configure time (pinned by commit), and Catch2 v3.11.0 when the tests are built.
 

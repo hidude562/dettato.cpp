@@ -27,14 +27,19 @@ jobs:
             model: true
           - name: linux-clang (CPU)
             os: ubuntu-24.04
-            cc: clang-18
-            cxx: clang++-18
+            cc: clang-19
+            cxx: clang++-19
+            apt: clang-19
           - name: macos-arm64 (Metal)
             os: macos-15
           - name: windows-msvc (CPU)
             os: windows-2022
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install the compiler
+        if: matrix.apt
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
 
       - name: Configure
         shell: bash
@@ -70,8 +75,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install the Vulkan headers and glslc
-        run: sudo apt-get update && sudo apt-get install -y libvulkan-dev glslc
+      - name: Install the Vulkan headers, SPIR-V headers and glslc
+        run: sudo apt-get update && sudo apt-get install -y libvulkan-dev spirv-headers glslc
       - name: Configure
         run: cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=ON
       - name: Build
