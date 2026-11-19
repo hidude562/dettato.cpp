@@ -47,7 +47,7 @@ int main(int argc, char** argv)
         ModelFile mf(argv[1], be.get());
         const std::string taps = arg(argc, argv, "--taps", "hidden");
         const int B = std::stoi(arg(argc, argv, "--batch", "4"));
-        const double hop_frac = std::stod(arg(argc, argv, "--hop-frac", "0.25"));
+        const double hop_frac = std::stod(arg(argc, argv, "--hop-frac", "0.5"));
         Transcriber tr(mf, be, B, LaneNet::Taps{taps != "none", taps == "both", false, arg(argc, argv, "--tap-f16", "0") == "1"});
         std::printf("backend %s | load %.0f ms | graph %d nodes, compute buffer %.0f MB | batch %d\n", be.name().c_str(), ms(t_load),
                     tr.net().nodes(), tr.net().computeBytes() / 1e6, B);

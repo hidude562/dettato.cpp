@@ -12,7 +12,7 @@ cd cpp && cmake --preset cpu && cmake --build --preset cpu && ctest --preset cpu
   against a direct DFT, the peak-pick decode on hand-made maps, the MIDI writer (read back with a parser), the WAV reader
   (16-bit, 24-bit, float, stereo downmix) and the API's error paths.
 - `[model]`: a dettato GGUF on the CPU. A synthetic tone sequence (C4, E4, G4, C5 plucked tones) must come out as those
-  notes in Best mode at 44.1 kHz and in Fast mode at 16 kHz; the progress must be monotonic; argument checks and
+  notes at 44.1 kHz and at 16 kHz; the progress must be monotonic; argument checks and
   cancellation must work. About a minute. They run when `DETTATO_TEST_MODEL` names the GGUF and are skipped otherwise:
 
 ```bash

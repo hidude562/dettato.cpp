@@ -70,14 +70,7 @@ struct Progress {
     float overall;        // 0..1 over the whole call (stages weighted by their typical run time)
 };
 
-enum class Quality : uint8_t {
-    Best, // the transcriber reads 8 s windows every 2 s, as the Python package does
-    Fast, // windows every 4 s: about 40 % faster on a GPU, the same benchmark score
-          // (docs/BENCHMARK.md: composite 67.74 vs 67.75 on four sets; ~2 % of notes move, neutral on average)
-};
-
 struct TranscribeOptions {
-    Quality quality = Quality::Best;
     /** Run the drum model. It only runs when the source rate is at least 40 kHz (it reads the 7.8-20 kHz band). */
     bool drums = true;
     /** Polled between windows; returning true makes transcribe() return Error::Cancelled. */

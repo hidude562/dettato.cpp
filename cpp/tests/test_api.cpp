@@ -129,11 +129,9 @@ TEST_CASE("a tone sequence comes out as its notes", "[model]")
     CHECK(std::is_sorted(overall.begin(), overall.end()));
     CHECK(overall.back() <= 1.0f);
 
-    // Fast mode at 16 kHz (no drums at that rate): the same notes
-    dtt::TranscribeOptions fast;
-    fast.quality = dtt::Quality::Fast;
+    // at 16 kHz (no drums at that rate): the same notes
     std::vector<float> x16 = testSignal(16000.0);
-    const auto r16 = p.transcribe(x16, 16000.0, fast);
+    const auto r16 = p.transcribe(x16, 16000.0);
     REQUIRE(r16.has_value());
     CHECK(r16->drum_model.empty());
     CHECK(hasNote(*r16, 60, 0.5));

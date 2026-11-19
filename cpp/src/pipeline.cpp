@@ -256,15 +256,15 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         const std::vector<float>& y = rt.y;
         lap("tuning check (+ retune)");
 
-        // 2. ONE transcriber pass on y. Two sinks read it as it streams: the evidence repairer's, and the grouper's store,
-        //    which keeps what the grouper reads from the windows a hop-0.5 pass would run (all of them in Fast, every other
-        //    one in Best); maps2 is the average over just those windows, i.e. what the grouper's own pass would give.
+        // 2. ONE transcriber pass on y, 8 s windows every 4 s. Two sinks read it as it streams: the evidence repairer's,
+        //    and the grouper's store, which keeps what the grouper reads from it; maps2 is the same average the grouper's
+        //    own pass would give.
         auto ev_sink = I.rep->makeSink();
         auto gr_sink = I.gr->makeStoreSink();
         FanOutSink fan({ev_sink.get(), gr_sink.get()});
         Maps maps2;
         Transcriber::RunOptions ro;
-        ro.hop_frac = o.quality == Quality::Fast ? 0.5 : 0.25;
+        ro.hop_frac = 0.5;
         ro.sink = &fan;
         ro.tap_mask = (1u << TapSink::HIDDEN) | (1u << TapSink::STEM);
         ro.sub_maps = &maps2;

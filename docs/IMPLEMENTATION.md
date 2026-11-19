@@ -45,7 +45,7 @@ exact form, `ggml_gelu` is the tanh approximation).
 
 ## Streaming over a song
 
-`Transcriber::run` slides 8 s windows over the whole recording (every 2 s in Best, 4 s in Fast), in batches of 4. Three
+`Transcriber::run` slides 8 s windows over the whole recording (every 4 s), in batches of 4. Three
 things overlap: the host computes the next batch's harmonic CQT while the device runs the current batch, and the host
 accumulates the previous batch's maps (Hann-weighted overlap-add). Consumers read the network's hidden states
 through `TapSink`s as the windows stream past, instead of a whole-song tensor:

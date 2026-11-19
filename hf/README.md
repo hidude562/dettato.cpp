@@ -50,8 +50,8 @@ the details.
 ## Benchmark
 
 On four of the dettato benchmark sets (Bach10, Dagstuhl ChoirSet, PHENICX-Anechoic and RWC Royalty-Free), dettato.cpp
-scores 67.75 composite F1 and the Python package scores 67.51. A 4 minute song takes 11.7 seconds on an RTX 5060 in Fast
-mode, and the Python package takes 20.1 seconds on the same card. The
+scores 67.74 composite F1 and the Python package scores 67.51. A 4 minute song takes 11.7 seconds on an RTX 5060, and the
+Python package takes 20.1 seconds on the same card. The
 [benchmark docs](https://github.com/hidude562/dettato.cpp/blob/main/docs/BENCHMARK.md) have the full tables.
 
 ## Use
@@ -60,7 +60,7 @@ mode, and the Python package takes 20.1 seconds on the same card. The
 git clone https://github.com/hidude562/dettato.cpp && cd dettato.cpp
 python py/fetch.py models/
 cd cpp && cmake --preset release && cmake --build --preset release
-../build/tools/dettato_cli ../models/dettato-f16.gguf song.wav -o out/ --fast
+../build/tools/dettato_cli ../models/dettato-f16.gguf song.wav -o out/
 ```
 
 The C++ API is in the [README](https://github.com/hidude562/dettato.cpp). For Python, use the

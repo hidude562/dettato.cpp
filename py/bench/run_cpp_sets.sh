@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The C++ pipeline (dettato_cli) on the four benchmark sets, then score.py.
 #
-#   py/bench/run_cpp_sets.sh SETS_DIR OUT_DIR MODEL.gguf [dettato_cli options, e.g. --fast]
+#   py/bench/run_cpp_sets.sh SETS_DIR OUT_DIR MODEL.gguf [dettato_cli options, e.g. --no-drums]
 #
 # SETS_DIR is what build_sets.py wrote. The sets with drums (RWC-R here) are fed at their own rate, as a plugin would pass
 # them (converted from full/<id>.flac to WAV with ffmpeg, cached in OUT_DIR/wav); the others get the set's 16 kHz audio,

@@ -13,7 +13,6 @@ if (!p) {
     return;
 }
 dtt::TranscribeOptions o;
-o.quality = dtt::Quality::Fast;
 o.on_progress = [](const dtt::Progress& pr) { setProgress(pr.overall); };
 o.should_cancel = [&] { return cancelRequested.load(); };
 auto r = p->transcribe(samples, 44100.0, o);
@@ -73,8 +72,6 @@ downmix stereo first). It returns a `Transcription`:
 
 `TranscribeOptions`:
 
-- `quality`: `Best` reads the transcriber's 8 s windows every 2 s (the package's setting), `Fast` every 4 s: about 40 %
-  less time on a GPU and the same benchmark score (`docs/BENCHMARK.md`).
 - `drums`: run the drum model. It reads the 7.8-20 kHz band, so it only runs when `sample_rate` is at least 40 kHz.
   Below that, there is no drum track.
 - `should_cancel`: polled between windows and between stages; returning true ends the call with `Error::Cancelled`.
@@ -88,7 +85,7 @@ the reason in `lastErrorMessage()`, also set for `InvalidArgument`).
 ## Threads and memory
 
 One `transcribe()` at a time per `Pipeline`; separate `Pipeline`s are independent. `transcribe()` is blocking (about 12 s
-for a 4-min song on an RTX 5060 in Fast mode, a few minutes on a CPU), so a plugin calls it from a worker thread.
+for a 4-min song on an RTX 5060, a few minutes on a CPU), so a plugin calls it from a worker thread.
 
 Peak resident memory of `dettato_cli` (measured, f16 weights): on the RTX 5060, 1.2 GB for a 3 s clip (the Vulkan
 driver and fixed buffers) and 2.7 GB for a 4-min song; on the CPU, 2.7 GB already for a 3 s clip, because the compute

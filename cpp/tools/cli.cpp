@@ -34,7 +34,6 @@ int main(int argc, char** argv)
     std::string model, out_dir = ".", device = "auto";
     int threads = 0;
     bool drums = true;
-    bool fast = false;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
         if (a == "-o" && i + 1 < argc) {
@@ -45,8 +44,6 @@ int main(int argc, char** argv)
             threads = std::stoi(argv[++i]);
         } else if (a == "--no-drums") {
             drums = false;
-        } else if (a == "--fast") {
-            fast = true;
         } else if (a == "--list-devices") {
             const auto d = dtt::availableDevices();
             for (size_t k = 0; k < d.size(); k++) {
@@ -60,7 +57,7 @@ int main(int argc, char** argv)
         }
     }
     if (model.empty() || inputs.empty()) {
-        std::fprintf(stderr, "usage: %s MODEL.gguf IN.wav [...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums] [--fast]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s MODEL.gguf IN.wav [...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums]\n", argv[0]);
         return 2;
     }
     dtt::LoadOptions lo;
@@ -85,7 +82,6 @@ int main(int argc, char** argv)
             const dtt::Audio a = dtt::readWav(in);
             dtt::TranscribeOptions to;
             to.drums = drums;
-            to.quality = fast ? dtt::Quality::Fast : dtt::Quality::Best;
             const auto t = std::chrono::steady_clock::now();
             auto r = pipe->transcribe(a.samples, a.rate, to);
             const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();

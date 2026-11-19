@@ -6,18 +6,18 @@ made it so dettato can be a backend for [NeuralNote](https://github.com/DamRsn/N
 [muscriptor.cpp](https://github.com/DamRsn/muscriptor.cpp), so the API is close to that one.
 
 You give it a recording and it gives back the notes in instrument tracks, plus a drum track. A 4 minute song takes 11.7
-seconds on an RTX 5060 in Fast mode. The Python package takes 20.1 seconds on the same card.
+seconds on an RTX 5060. The Python package takes 20.1 seconds on the same card.
 
 ## Status
 
 All four models are ported. I checked each one against the PyTorch package ([docs/PARITY.md](docs/PARITY.md)). On the CPU
 in float32 each stage matches to about 1e-6, and the notes, drum hits and tracks come out the same. On four of the
-dettato benchmark sets it scores 67.75 composite F1. The Python package scores 67.51.
+dettato benchmark sets it scores 67.74 composite F1. The Python package scores 67.51.
 
 It scores a bit higher because of one change I made on purpose. The Python package runs the transcriber twice. It runs it
 on the recording for the notes, and then on the recording tuned to A440 for the grouper. dettato.cpp checks the tuning
 first, so the transcriber only does one pass, on the tuned audio. For a song that is in tune this is the same thing.
-For a song that is off A440 the notes get better. For instance, the frame F1 on Dagstuhl ChoirSet goes from 79.0 to 81.2.
+For a song that is off A440 the notes get better. For instance, the frame F1 on Dagstuhl ChoirSet goes from 79.2 to 81.2.
 
 I tested it on Linux with Vulkan (RTX 5060) and on the CPU. CI builds it on macOS with Metal and on Windows with MSVC, but I
 have not run it on a Mac yet.
@@ -28,14 +28,12 @@ A 4 minute song (nine instruments and drums) on an RTX 5060:
 
 | | time | speed |
 |---|---|---|
-| **dettato.cpp, Fast** | **11.7 s** | **20.5x** |
-| dettato.cpp, Best | 19.4 s | 12.4x |
+| **dettato.cpp** | **11.7 s** | **20.5x** |
 | dettato Python package (CUDA) | 20.1 s | 11.9x |
 | MuScriptor small, muscriptor.cpp | 28.2 s | 8.5x |
 | MuScriptor medium, muscriptor.cpp | 67.7 s | 3.5x |
 
-Fast mode steps the 8 second windows by 4 seconds instead of 2. It scores 67.74, so it is the same as Best on the
-benchmark. The drums run on the GPU at the same time as the grouper. [docs/BENCHMARK.md](docs/BENCHMARK.md) has the
+The drums run on the GPU at the same time as the grouper. [docs/BENCHMARK.md](docs/BENCHMARK.md) has the
 details and the CPU numbers.
 
 ## Build
@@ -70,9 +68,7 @@ with `py/convert.py`.
 auto p = dtt::Pipeline::load("models/dettato-f16.gguf");   // picks a GPU if there is one
 if (!p) return fail(dtt::describe(p.error()));
 
-dtt::TranscribeOptions o;
-o.quality = dtt::Quality::Fast;
-auto r = p->transcribe(samples, 44100.0, o);                // mono float32 at the recording's own rate
+auto r = p->transcribe(samples, 44100.0);                   // mono float32 at the recording's own rate
 for (const dtt::Note& n : r->notes) {
     const dtt::Track& t = r->tracks[n.track];               // t.name, t.program, t.is_drum
 }
@@ -85,7 +81,7 @@ has the rest.
 ## Command Line
 
 ```bash
-build/tools/dettato_cli models/dettato-f16.gguf song.wav -o out/ --fast
+build/tools/dettato_cli models/dettato-f16.gguf song.wav -o out/
 ```
 
 It writes `out/song.mid` and `out/song.json`. It only reads WAV, so I would convert other formats with ffmpeg first.
