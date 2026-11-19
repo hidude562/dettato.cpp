@@ -1,0 +1,8 @@
+dettato @ git+https://github.com/kobimusic/dettato
+mir_eval>=0.7
+pretty_midi>=0.2.10
+numpy
+scipy
+soundfile
+soxr
+pyyaml

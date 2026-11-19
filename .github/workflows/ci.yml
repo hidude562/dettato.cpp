@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GGML_NO_BACKTRACE: "1"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc (CPU, with the model tests)
+            os: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            model: true
+          - name: linux-clang (CPU)
+            os: ubuntu-24.04
+            cc: clang-18
+            cxx: clang++-18
+          - name: macos-arm64 (Metal)
+            os: macos-15
+          - name: windows-msvc (CPU)
+            os: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.cc }}" ]; then export CC=${{ matrix.cc }} CXX=${{ matrix.cxx }}; fi
+          cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=OFF
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Tests without weights
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Cache the GGUF
+        if: matrix.model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: dettato-gguf-${{ hashFiles('py/fetch.py') }}
+
+      - name: Fetch the GGUF
+        if: matrix.model
+        run: python3 py/fetch.py models
+
+      - name: Tests with the model (CPU)
+        if: matrix.model
+        env:
+          DETTATO_TEST_MODEL: ${{ github.workspace }}/models/dettato-f16.gguf
+        run: ./build/tests/dettato_tests "[model]" --durations yes
+
+  vulkan:
+    name: linux-vulkan (build only)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Vulkan headers and glslc
+        run: sudo apt-get update && sudo apt-get install -y libvulkan-dev glslc
+      - name: Configure
+        run: cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=ON
+      - name: Build
+        run: cmake --build build --parallel 4
+      - name: Tests without weights
+        run: ctest --test-dir build --output-on-failure

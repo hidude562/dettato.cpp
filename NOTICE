@@ -1,0 +1,11 @@
+dettato.cpp
+Copyright 2026 KobiMusic
+
+This product is a C++/ggml port of Dettato by KobiMusic (https://github.com/kobimusic/dettato), Apache-2.0,
+and runs its model weights (https://huggingface.co/kobimusic), Apache-2.0.
+
+It includes pocketfft (cpp/third_party/pocketfft), Copyright (C) 2010-2018 Max-Planck-Society, BSD-3-Clause
+(cpp/third_party/pocketfft/LICENSE.md).
+
+It is built against ggml (https://github.com/ggml-org/ggml), MIT License, which the build fetches; the test suite
+fetches Catch2 (https://github.com/catchorg/Catch2), Boost Software License 1.0.

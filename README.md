@@ -1,0 +1,118 @@
+# dettato.cpp
+
+A C++ port of [dettato](https://github.com/kobimusic/dettato), KobiMusic's audio to MIDI transcriber, on
+[ggml](https://github.com/ggml-org/ggml). It runs all four models of dettato with no Python, on the CPU, Metal or Vulkan. I
+made it so dettato can be a backend for [NeuralNote](https://github.com/DamRsn/NeuralNote) next to
+[muscriptor.cpp](https://github.com/DamRsn/muscriptor.cpp), so the API is close to that one.
+
+You give it a recording and it gives back the notes in instrument tracks, plus a drum track. A 4 minute song takes 11.7
+seconds on an RTX 5060 in Fast mode. The Python package takes 20.1 seconds on the same card.
+
+## Status
+
+All four models are ported. I checked each one against the PyTorch package ([docs/PARITY.md](docs/PARITY.md)). On the CPU
+in float32 each stage matches to about 1e-6, and the notes, drum hits and tracks come out the same. On four of the
+dettato benchmark sets it scores 67.75 composite F1. The Python package scores 67.51.
+
+It scores a bit higher because of one change I made on purpose. The Python package runs the transcriber twice. It runs it
+on the recording for the notes, and then on the recording tuned to A440 for the grouper. dettato.cpp checks the tuning
+first, so the transcriber only does one pass, on the tuned audio. For a song that is in tune this is the same thing.
+For a song that is off A440 the notes get better. For instance, the frame F1 on Dagstuhl ChoirSet goes from 79.0 to 81.2.
+
+I tested it on Linux with Vulkan (RTX 5060) and on the CPU. CI builds it on macOS with Metal and on Windows with MSVC, but I
+have not run it on a Mac yet.
+
+## Speed
+
+A 4 minute song (nine instruments and drums) on an RTX 5060:
+
+| | time | speed |
+|---|---|---|
+| **dettato.cpp, Fast** | **11.7 s** | **20.5x** |
+| dettato.cpp, Best | 19.4 s | 12.4x |
+| dettato Python package (CUDA) | 20.1 s | 11.9x |
+| MuScriptor small, muscriptor.cpp | 28.2 s | 8.5x |
+| MuScriptor medium, muscriptor.cpp | 67.7 s | 3.5x |
+
+Fast mode steps the 8 second windows by 4 seconds instead of 2. It scores 67.74, so it is the same as Best on the
+benchmark. The drums run on the GPU at the same time as the grouper. [docs/BENCHMARK.md](docs/BENCHMARK.md) has the
+details and the CPU numbers.
+
+## Build
+
+You need CMake 3.24 and a C++23 compiler. For the GPU you need the Vulkan SDK, or Xcode for Metal.
+
+```bash
+cd cpp
+cmake --preset release
+cmake --build --preset release
+```
+
+It fetches ggml v1.0.0 when it configures. [docs/BUILDING.md](docs/BUILDING.md) has the presets and options.
+
+## Weights
+
+The weights are one GGUF file with all four models (74 MB in float16). They are on Hugging Face at
+[kobimusic/dettato-gguf](https://huggingface.co/kobimusic/dettato-gguf).
+
+```bash
+python py/fetch.py models/
+```
+
+This downloads `dettato-f16.gguf` and checks its sha256. You could also make the same file yourself from the safetensors
+with `py/convert.py`.
+
+## Use
+
+```c++
+#include "dettato/dettato.hpp"
+
+auto p = dtt::Pipeline::load("models/dettato-f16.gguf");   // picks a GPU if there is one
+if (!p) return fail(dtt::describe(p.error()));
+
+dtt::TranscribeOptions o;
+o.quality = dtt::Quality::Fast;
+auto r = p->transcribe(samples, 44100.0, o);                // mono float32 at the recording's own rate
+for (const dtt::Note& n : r->notes) {
+    const dtt::Track& t = r->tracks[n.track];               // t.name, t.program, t.is_drum
+}
+```
+
+`transcribe()` blocks until it is done, so a plugin would call it from a worker thread. It has a progress callback and a
+cancel callback, like muscriptor.cpp. The drums only run when the recording is 40 kHz or more. [docs/API.md](docs/API.md)
+has the rest.
+
+## Command Line
+
+```bash
+build/tools/dettato_cli models/dettato-f16.gguf song.wav -o out/ --fast
+```
+
+It writes `out/song.mid` and `out/song.json`. It only reads WAV, so I would convert other formats with ffmpeg first.
+
+## Using It From CMake
+
+```cmake
+add_subdirectory(third_party/dettato.cpp/cpp)
+target_link_libraries(my_app PRIVATE dettato_ggml)
+```
+
+If the host already builds ggml (NeuralNote does for muscriptor.cpp), add ggml first. Then dettato.cpp links to that ggml
+instead of fetching a second copy, since a binary can only have one ggml. It needs ggml v1.0.0 or newer.
+
+## Docs
+
+| | |
+|---|---|
+| [API.md](docs/API.md) | the API, devices, errors, threads and memory |
+| [BUILDING.md](docs/BUILDING.md) | presets, options, using it as a subproject |
+| [MODEL.md](docs/MODEL.md) | the four models, what runs where, the GGUF format |
+| [BENCHMARK.md](docs/BENCHMARK.md) | accuracy and speed |
+| [PARITY.md](docs/PARITY.md) | how close each stage is to the PyTorch package |
+| [TESTING.md](docs/TESTING.md) | the tests and the parity tools |
+| [IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | how the models map onto ggml |
+
+## License
+
+Apache-2.0, the same as dettato's code and weights. It includes pocketfft (BSD-3-Clause) and fetches ggml (MIT) and Catch2
+(BSL-1.0) when it builds.

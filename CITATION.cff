@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use dettato.cpp, please cite it as below."
+title: "dettato.cpp: Dettato multi-instrument audio-to-MIDI transcription on ggml"
+type: software
+authors:
+  - family-names: "Mills"
+    given-names: "Nathan"
+repository-code: "https://github.com/hidude562/dettato.cpp"
+url: "https://huggingface.co/kobimusic/dettato-gguf"
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-11-19"
+references:
+  - type: software
+    title: "Dettato: multi-instrument audio-to-MIDI transcription"
+    authors:
+      - family-names: "Mills"
+        given-names: "Nathan"
+    repository-code: "https://github.com/kobimusic/dettato"
+    version: 2.0.0
