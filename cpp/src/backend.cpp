@@ -7,6 +7,7 @@
 #include <ggml-cpu.h>
 #include <ggml.h>
 
+#include <cstdlib>
 #include "common.hpp"
 
 namespace dtt
@@ -76,6 +77,14 @@ std::string Backend::firstUnsupportedOp(ggml_cgraph* graph) const
 {
     for (int i = 0; i < ggml_graph_n_nodes(graph); i++) {
         ggml_tensor* t = ggml_graph_node(graph, i);
+        if (std::getenv("DTT_TMP_OPDUMP")) { // TMP
+            std::string d = std::string(ggml_op_desc(t)) + " " + ggml_type_name(t->type); // TMP
+            for (int j = 0; j < GGML_MAX_SRC && t->src[j] != nullptr; j++) { // TMP
+                const ggml_tensor* x = t->src[j]; // TMP
+                d += std::string(" | ") + ggml_type_name(x->type) + (ggml_is_contiguous(x) ? "" : " nc") + (ggml_is_contiguous_rows(x) ? "" : " ncrows") + format(" ne3=%lld ne2=%lld ne0=%lld", (long long)x->ne[3], (long long)x->ne[2], (long long)x->ne[0]); // TMP
+            } // TMP
+            std::fprintf(stderr, "OPDUMP %s\n", d.c_str()); // TMP
+        } // TMP
         if (!ggml_backend_supports_op(mBackend, t)) {
             // the op, then each tensor's type and shape (ne, fastest first), marked when it is not contiguous
             auto desc = [](const ggml_tensor* x) {

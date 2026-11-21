@@ -22,7 +22,8 @@ DETTATO_TEST_MODEL=models/dettato-f16.gguf ctest --preset cpu
 ```
 
 CI runs the `[pure]` tests on Linux (GCC, Clang), macOS (arm64, Metal) and Windows (MSVC), and the `[model]` tests on
-Linux and macOS. Linux and macOS also build and test against the ggml muscriptor.cpp pins (the DamRsn/ggml v0.23 fork),
+Linux and macOS. The macOS runners' GPU (Apple's paravirtual device) cannot run ggml-metal's matmuls, so there the GPU test
+skips and the Auto test checks the fall-back to the CPU. Linux and macOS also build and test against the ggml muscriptor.cpp pins (the DamRsn/ggml v0.23 fork),
 and Linux builds the Vulkan backend on both ggml versions.
 
 ## Parity with the PyTorch package

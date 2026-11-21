@@ -44,6 +44,16 @@ const char* describe(Error e)
 
 namespace
 {
+    /** "Metal", "Vulkan", ... (ggml names its Metal backend "MTL"). */
+    std::string backendName(ggml_backend_reg_t reg)
+    {
+        if (reg == nullptr) {
+            return "GPU";
+        }
+        const std::string n = ggml_backend_reg_name(reg);
+        return n == "MTL" ? "Metal" : n;
+    }
+
     constexpr double MIN_END_S = 0.03;        // every pitched note lasts at least 30 ms before grouping
     constexpr double DRUM_MIN_RATE = 40000.0; // the drum model reads the 7.8-20 kHz band
     // typical share of the run time, for the overall progress
@@ -75,7 +85,7 @@ std::vector<Device> availableDevices()
         size_t free = 0, total = 0;
         ggml_backend_dev_memory(d, &free, &total);
         ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(d);
-        gpus.push_back({ggml_backend_dev_description(d), reg ? ggml_backend_reg_name(reg) : "GPU", t == GGML_BACKEND_DEVICE_TYPE_IGPU, total});
+        gpus.push_back({ggml_backend_dev_description(d), backendName(reg), t == GGML_BACKEND_DEVICE_TYPE_IGPU, total});
     }
     out = gpus;
     out.push_back({"CPU", "CPU", false, 0});
@@ -133,7 +143,6 @@ std::expected<Pipeline, Error> Pipeline::load(const std::filesystem::path& path,
     }
     const std::u8string p8 = path.u8string(); // ggml opens files by UTF-8 name (wide on Windows)
     const std::string path_utf8(p8.begin(), p8.end());
-    auto impl = std::make_unique<Impl>();
     const auto devices = availableDevices();
     std::string dev = "auto";
     if (options.device) {
@@ -145,48 +154,67 @@ std::expected<Pipeline, Error> Pipeline::load(const std::filesystem::path& path,
         }
         dev = *options.device + 1 == devices.size() ? "cpu" : std::to_string(gpuIndices()[*options.device]);
     }
-    try {
-        impl->be = std::make_unique<Backend>(dev, options.n_threads);
-        if (options.on_progress) {
-            options.on_progress(0.0f);
+
+    // everything on one device; the error and its reason when it fails
+    std::string why;
+    auto attempt = [&](const std::string& device) -> std::expected<std::unique_ptr<Impl>, Error> {
+        auto impl = std::make_unique<Impl>();
+        try {
+            impl->be = std::make_unique<Backend>(device, options.n_threads);
+            if (options.on_progress) {
+                options.on_progress(0.0f);
+            }
+            impl->mf = std::make_unique<ModelFile>(path_utf8, impl->be->get());
+            if (options.should_cancel && options.should_cancel()) {
+                return std::unexpected(Error::Cancelled);
+            }
+            impl->tr = std::make_unique<Transcriber>(*impl->mf, *impl->be, 4, LaneNet::Taps{true, true, false});
+            impl->rep = std::make_unique<EvidenceRepairer>(*impl->mf, *impl->be);
+            impl->gr = std::make_unique<Grouper>(*impl->mf, *impl->be);
+            // A ggml backend runs one graph at a time, so the drums (started in parallel on a GPU) get their own instance
+            // on the same device; the weights live in device buffers both can read. On the CPU they stay in sequence:
+            // ggml's CPU threads slow down sharply when two thread pools share the cores.
+            if (!impl->be->isCpu()) {
+                impl->be_drums = std::make_unique<Backend>(device, options.n_threads);
+            }
+            impl->dr = std::make_unique<DrumTranscriber>(*impl->mf, impl->be_drums ? *impl->be_drums : *impl->be);
+            if (options.on_progress) {
+                options.on_progress(1.0f);
+            }
+        } catch (const Failure& e) {
+            why = e.what();
+            if (why.find("cannot run") != std::string::npos || why.find("initialise") != std::string::npos) {
+                return std::unexpected(Error::DeviceUnavailable);
+            }
+            if (why.find("version") != std::string::npos) {
+                return std::unexpected(Error::UnsupportedCheckpointVersion);
+            }
+            return std::unexpected(Error::InvalidCheckpoint);
         }
-        impl->mf = std::make_unique<ModelFile>(path_utf8, impl->be->get());
-        if (options.should_cancel && options.should_cancel()) {
-            return std::unexpected(Error::Cancelled);
+        return impl;
+    };
+    auto r = attempt(dev);
+    // Auto: a GPU that cannot run the networks (or cannot start) leaves the CPU, which always can
+    if (!r && r.error() == Error::DeviceUnavailable && dev == "auto") {
+        const std::string gpu_why = why;
+        r = attempt("cpu");
+        if (r) {
+            why = "the GPU could not be used, so the CPU runs the networks: " + gpu_why;
         }
-        impl->tr = std::make_unique<Transcriber>(*impl->mf, *impl->be, 4, LaneNet::Taps{true, true, false});
-        impl->rep = std::make_unique<EvidenceRepairer>(*impl->mf, *impl->be);
-        impl->gr = std::make_unique<Grouper>(*impl->mf, *impl->be);
-        // A ggml backend runs one graph at a time, so the drums (started in parallel on a GPU) get their own instance on the
-        // same device; the weights live in device buffers both can read. On the CPU they stay in sequence: ggml's CPU threads
-        // slow down sharply when two thread pools share the cores.
-        if (!impl->be->isCpu()) {
-            impl->be_drums = std::make_unique<Backend>(dev, options.n_threads);
-        }
-        impl->dr = std::make_unique<DrumTranscriber>(*impl->mf, impl->be_drums ? *impl->be_drums : *impl->be);
-        if (options.on_progress) {
-            options.on_progress(1.0f);
-        }
-    } catch (const Failure& e) {
-        const std::string m = e.what();
-        if (options.error_detail) {
-            *options.error_detail = m;
-        }
-        if (m.find("cannot run") != std::string::npos || m.find("initialise") != std::string::npos) {
-            return std::unexpected(Error::DeviceUnavailable);
-        }
-        if (m.find("version") != std::string::npos) {
-            return std::unexpected(Error::UnsupportedCheckpointVersion);
-        }
-        return std::unexpected(Error::InvalidCheckpoint);
     }
+    if (options.error_detail) {
+        *options.error_detail = why;
+    }
+    if (!r) {
+        return std::unexpected(r.error());
+    }
+    std::unique_ptr<Impl> impl = std::move(*r);
     impl->device = Device{"CPU", "CPU", false, 0};
     if (!impl->be->isCpu()) {
         ggml_backend_dev_t d = ggml_backend_get_device(impl->be->get());
-        ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(d);
         size_t free = 0, total = 0;
         ggml_backend_dev_memory(d, &free, &total);
-        impl->device = Device{ggml_backend_dev_description(d), reg ? ggml_backend_reg_name(reg) : "GPU",
+        impl->device = Device{ggml_backend_dev_description(d), backendName(ggml_backend_dev_backend_reg(d)),
                               ggml_backend_dev_type(d) == GGML_BACKEND_DEVICE_TYPE_IGPU, total};
     }
     return Pipeline(std::move(impl));

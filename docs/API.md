@@ -33,7 +33,9 @@ last. Each `Device` has a `name`, a `backend` (`"Metal"`, `"Vulkan"` or `"CPU"`)
 (bytes, 0 when unknown). The list is built once per process; the first call can take a second (the Vulkan loader).
 
 `LoadOptions::device` is an index into that list. Left empty, `load()` picks the first discrete GPU, else the first
-integrated one, else the CPU. `LoadOptions::n_threads` (0 = all logical CPUs) sets the CPU backend's threads and the host
+integrated one, else the CPU; when that GPU cannot run one of the networks (or cannot start), it loads on the CPU instead
+and `error_detail` says why. A device chosen by index is never swapped: it loads there or fails with
+`DeviceUnavailable`. `LoadOptions::n_threads` (0 = all logical CPUs) sets the CPU backend's threads and the host
 code's.
 
 ## Loading

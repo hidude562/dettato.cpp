@@ -65,8 +65,10 @@ faster.
 
 - **Linux**: tested with Vulkan on an NVIDIA RTX 5060 and with the CPU backend. The CPU build targets baseline x86-64;
   the hot host loops pick AVX2 / FMA / F16C at run time.
-- **macOS**: CI builds Metal on Apple Silicon and runs the tests on the CPU. Metal itself is not yet tested on a Mac
-  (reports welcome). The transcriber uses ggml's flash attention where the backend supports it and the explicit softmax
-  otherwise.
+- **macOS**: CI builds the Metal backend on Apple Silicon, but GitHub's runners expose Apple's paravirtual GPU, which has
+  no simdgroup operations, so ggml-metal runs no matmul there: the model tests run on the CPU (and check that Auto falls
+  back to it). Every op the graphs use is in ggml-metal's supported set for Apple Silicon GPUs, on both ggml versions;
+  Metal has not yet run on a real Mac (reports welcome). The transcriber uses ggml's flash attention where the backend
+  supports it and the explicit softmax otherwise.
 - **Windows**: CI builds with MSVC and runs the tests on the CPU. Vulkan should build with the SDK installed but is not
   tested yet. The host loops use their portable scalar paths there.

@@ -32,7 +32,7 @@ struct NoteNet::Graph {
     bool debug = false;
     std::unique_ptr<StaticGraph> g;
     ggml_tensor *X = nullptr, *R = nullptr, *hd = nullptr, *prof = nullptr, *scal = nullptr, *s15 = nullptr;
-    ggml_tensor *pitch = nullptr, *rowOn = nullptr, *csOn = nullptr, *csOff = nullptr, *len = nullptr;
+    ggml_tensor *pitch = nullptr, *rowOn = nullptr, *csOn = nullptr, *csOff = nullptr, *len = nullptr, *csZero = nullptr;
     ggml_tensor *cosv = nullptr, *sinv = nullptr, *mask = nullptr;
     ggml_tensor *heads = nullptr, *hidden = nullptr;
     std::vector<std::pair<std::string, ggml_tensor*>> dbg;
@@ -189,6 +189,7 @@ void NoteNet::build(int B, int N, int Tf, bool debug)
     G->csOn = sg.input(GGML_TYPE_I32, {NB}, "cs_on");
     G->csOff = sg.input(GGML_TYPE_I32, {NB}, "cs_off");
     G->len = sg.input(GGML_TYPE_F32, {1, NB}, "len");
+    G->csZero = sg.input(GGML_TYPE_F32, {1, C, P, B}, "cs_zero");
     G->cosv = sg.input(GGML_TYPE_F32, {d / mHeads, 1, N, B}, "cos");
     G->sinv = sg.input(GGML_TYPE_F32, {d / mHeads, 1, N, B}, "sin");
     G->mask = sg.input(GGML_TYPE_F32, {N, N, 1, B}, "mask");
@@ -223,7 +224,8 @@ void NoteNet::build(int B, int N, int Tf, bool debug)
     // read at each note: its lane at the onset frame, and averaged over its frames (a time cumsum with a zero first row)
     ggml_tensor* at_on = ggml_get_rows(ctx, ggml_reshape_2d(ctx, y, C, P * Tq * B), G->rowOn); // [C, NB]
     ggml_tensor* yt = ggml_cont(ctx, ggml_permute(ctx, y, 1, 2, 0, 3));                          // [Tq, C, P, B]
-    ggml_tensor* cs = ggml_cumsum(ctx, ggml_pad_ext(ctx, yt, 1, 0, 0, 0, 0, 0, 0, 0));           // [Tq + 1, C, P, B]
+    // the zero first row is concatenated, not padded: ggml-metal before v1.0.0 cannot pad at the front
+    ggml_tensor* cs = ggml_concat(ctx, G->csZero, ggml_cumsum(ctx, yt), 0);                      // [Tq + 1, C, P, B]
     cs = ggml_cont(ctx, ggml_permute(ctx, cs, 1, 0, 2, 3));                                      // [C, Tq + 1, P, B]
     ggml_tensor* cs2 = ggml_reshape_2d(ctx, cs, C, (Tq + 1) * P * B);
     ggml_tensor* mean = ggml_div(ctx, ggml_sub(ctx, ggml_get_rows(ctx, cs2, G->csOff), ggml_get_rows(ctx, cs2, G->csOn)), G->len);
@@ -381,6 +383,8 @@ void NoteNet::run(const Inputs& in, bool debug)
     set(g.csOn, in.csOn.data(), in.csOn.size() * sizeof(int32_t));
     set(g.csOff, in.csOff.data(), in.csOff.size() * sizeof(int32_t));
     set(g.len, in.len.data(), in.len.size() * sizeof(float));
+    const std::vector<float> zeros(static_cast<size_t>(mC) * mP * in.B, 0.0f);
+    set(g.csZero, zeros.data(), zeros.size() * sizeof(float));
     set(g.cosv, in.cosv.data(), in.cosv.size() * sizeof(float));
     set(g.sinv, in.sinv.data(), in.sinv.size() * sizeof(float));
     // key-padding mask, the same for every query of a window

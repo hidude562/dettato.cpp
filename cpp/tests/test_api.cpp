@@ -218,6 +218,11 @@ TEST_CASE("the first GPU gives the CPU's notes", "[model][gpu]")
     o.error_detail = &why;
     auto g = dtt::Pipeline::load(testModel(), o);
     INFO("load on " << devs[0].name << ": " << why);
+    if (!g && devs[0].name.find("Paravirtual") != std::string::npos) {
+        // GitHub's macOS runners: Apple's paravirtual GPU has no simdgroup operations, and ggml-metal runs no matmul
+        // without them, so nothing can be tested on it
+        SKIP("Apple paravirtual GPU (ggml-metal runs no matmul on it): " + why);
+    }
     REQUIRE(g.has_value());
 
     const auto x = testSignal(44100.0, 5); // 40 s: the transcriber and the grouper run batches of several windows
@@ -244,4 +249,29 @@ TEST_CASE("the first GPU gives the CPU's notes", "[model][gpu]")
     const size_t dc = drumHits(*rc), dg = drumHits(*rg);
     CHECK((dc > dg ? dc - dg : dg - dc) <= std::max<size_t>(1, dc / 20));
     CHECK(std::abs(rg->tuning_cents - rc->tuning_cents) < 1.0);
+}
+
+TEST_CASE("Auto loads on a GPU that runs everything, else on the CPU", "[model]")
+{
+    if (testModel() == nullptr) {
+        SKIP("DETTATO_TEST_MODEL is not set");
+    }
+    dtt::LoadOptions o;
+    o.n_threads = static_cast<int>(std::clamp(std::thread::hardware_concurrency(), 1u, 8u));
+    std::string why;
+    o.error_detail = &why;
+    auto p = dtt::Pipeline::load(testModel(), o);
+    INFO(why);
+    REQUIRE(p.has_value());
+    std::printf("Auto: %s (%s)%s%s\n", p->device().name.c_str(), p->device().backend.c_str(), why.empty() ? "" : "; ", why.c_str());
+    const auto devs = dtt::availableDevices();
+    if (p->device().backend == "CPU" && devs.size() > 1) {
+        CHECK(!why.empty()); // it says why the GPU was passed over
+    }
+    for (const dtt::Device& d : devs) {
+        CHECK(d.backend != "MTL"); // reported as "Metal"
+    }
+    const auto r = p->transcribe(testSignal(16000.0), 16000.0);
+    REQUIRE(r.has_value());
+    CHECK(hasNote(*r, 60, 0.5));
 }

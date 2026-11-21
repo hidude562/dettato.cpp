@@ -47,7 +47,10 @@ struct Device {
 std::vector<Device> availableDevices();
 
 struct LoadOptions {
-    /** Index into availableDevices(); empty = Auto (first discrete GPU, else integrated, else the CPU). */
+    /**
+     * Index into availableDevices(); empty = Auto: the first discrete GPU, else integrated, else the CPU, and the CPU
+     * when that GPU cannot run the networks (error_detail then says why).
+     */
     std::optional<size_t> device;
     /** CPU threads; 0 = all logical CPUs. */
     int n_threads = 0;
@@ -55,7 +58,10 @@ struct LoadOptions {
     std::function<bool()> should_cancel;
     /** Fraction of the weights uploaded, 0..1. */
     std::function<void(float)> on_progress;
-    /** When load() fails, set to the reason (e.g. the operation a device cannot run), for logs. */
+    /**
+     * Set to the reason when load() fails (e.g. the operation a device cannot run), or when Auto had to fall back from a
+     * GPU to the CPU; empty otherwise. For logs.
+     */
     std::string* error_detail = nullptr;
 };
 
