@@ -109,6 +109,9 @@ Backend::~Backend()
 
 void Backend::compute(ggml_cgraph* graph) const
 {
+    if (mCancel && mCancel()) {
+        throw Cancelled();
+    }
     const ggml_status st = ggml_backend_graph_compute(mBackend, graph);
     if (st == GGML_STATUS_ABORTED) {
         throw Cancelled();

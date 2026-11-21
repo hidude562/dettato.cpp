@@ -31,8 +31,8 @@ public:
     void compute(struct ggml_cgraph* graph) const;
 
     /**
-     * A check the CPU backend polls at every graph node (a window of the transcriber takes seconds there); empty to
-     * clear it. GPU graphs are short, so their callers poll between them.
+     * A check polled before every graph, and by the CPU backend at every graph node as well (a window of the
+     * transcriber takes seconds there; a GPU graph a fraction of one); empty to clear it.
      */
     void setCancel(std::function<bool()> should_cancel) { mCancel = std::move(should_cancel); }
 

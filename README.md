@@ -5,22 +5,32 @@ A C++ port of [dettato](https://github.com/kobimusic/dettato), KobiMusic's audio
 made it so dettato can be a backend for [NeuralNote](https://github.com/DamRsn/NeuralNote) next to
 [muscriptor.cpp](https://github.com/DamRsn/muscriptor.cpp), so the API is close to that one.
 
-You give it a recording and it gives back the notes in instrument tracks, plus a drum track. A 4 minute song takes 11.7
-seconds on an RTX 5060. The Python package takes 20.1 seconds on the same card.
+You give it a recording and it gives back the notes in instrument tracks, plus a drum track. A 4 minute song takes 12.2
+seconds on an RTX 5060. The Python package takes 20.7 seconds on the same card.
 
 ## Status
 
 All four models are ported. I checked each one against the PyTorch package ([docs/PARITY.md](docs/PARITY.md)). On the CPU
-in float32 each stage matches to about 1e-6, and the notes, drum hits and tracks come out the same. On four of the
-dettato benchmark sets it scores 67.74 composite F1. The Python package scores 67.51.
+in float32 each stage matches to about 1e-6. On four of the dettato benchmark sets it scores 67.74 composite F1. The
+Python package scores 67.51. That difference is inside the error bars, so I would call them equal.
 
-It scores a bit higher because of one change I made on purpose. The Python package runs the transcriber twice. It runs it
-on the recording for the notes, and then on the recording tuned to A440 for the grouper. dettato.cpp checks the tuning
-first, so the transcriber only does one pass, on the tuned audio. For a song that is in tune this is the same thing.
-For a song that is off A440 the notes get better. For instance, the frame F1 on Dagstuhl ChoirSet goes from 79.2 to 81.2.
+The output is close to the package, but it is not the same, because I changed a few parts on purpose:
 
-I tested it on Linux with Vulkan (RTX 5060) and on the CPU. CI builds it on macOS with Metal and on Windows with MSVC, but I
-have not run it on a Mac yet.
+- The Python package runs the transcriber twice. It runs it on the recording for the notes, and then on the recording
+  tuned to A440 for the grouper. dettato.cpp checks the tuning first, so the transcriber only does one pass, on the tuned
+  audio. For a song that is in tune this is the same. For a song that is off A440 the notes get better. For instance, the
+  frame F1 on Dagstuhl ChoirSet goes from 79.2 to 81.2.
+- The transcriber reads the song in windows of 8 seconds. The package moves the window by 2 seconds each time and
+  dettato.cpp moves it by 4. This is faster, and the benchmark score stays the same.
+
+On a 4 minute song 98% of the notes are the same as the package. The instrument tracks change more than the notes. If a
+few notes change, a group of notes could all move to another track. The package has this too when its window step
+changes. I also scored the tracks against the true instruments of the benchmark recordings, and they score close to the
+package ([docs/BENCHMARK.md](docs/BENCHMARK.md)).
+
+I ran it on Linux with Vulkan (an RTX 5060 and Intel integrated graphics) and on the CPU. CI builds and tests it on macOS
+and on Windows, but only on the CPU, since the CI machines have no GPU that ggml could use. This means Metal has never
+run on a Mac GPU, and Vulkan has never run on Windows.
 
 ## Speed
 
@@ -28,22 +38,24 @@ A 4 minute song (nine instruments and drums) on an RTX 5060:
 
 | | time | speed |
 |---|---|---|
-| **dettato.cpp** | **11.7 s** | **20.5x** |
-| dettato Python package (CUDA) | 20.1 s | 11.9x |
+| **dettato.cpp** | **12.2 s** | **19.7x** |
+| dettato Python package (CUDA) | 20.7 s | 11.6x |
 | MuScriptor small, muscriptor.cpp | 28.2 s | 8.5x |
 | MuScriptor medium, muscriptor.cpp | 67.7 s | 3.5x |
 
-The drums run on the GPU at the same time as the grouper. [docs/BENCHMARK.md](docs/BENCHMARK.md) has the
-details and the CPU numbers.
+The Python package is timed the way it ships, with the 2 second step and both passes. The drums run on the GPU at the
+same time as the grouper. On the CPU the same song takes about 2.5 minutes with 8 threads.
+[docs/BENCHMARK.md](docs/BENCHMARK.md) has the details.
 
 ## Build
 
-You need CMake 3.24 and a C++23 compiler. For the GPU you need the Vulkan SDK, or Xcode for Metal.
+You need CMake 3.24 and a C++23 compiler (GCC 13, Clang 19 or Visual Studio 2022). For the GPU you need the Vulkan SDK, or
+Xcode for Metal. Without them it builds for the CPU.
 
 ```bash
 cd cpp
 cmake --preset release
-cmake --build --preset release
+cmake --build --preset release --parallel 4
 ```
 
 It fetches ggml v1.0.0 when it configures. [docs/BUILDING.md](docs/BUILDING.md) has the presets and options.
@@ -54,7 +66,7 @@ The weights are one GGUF file with all four models (74 MB in float16). They are 
 [kobimusic/dettato-gguf](https://huggingface.co/kobimusic/dettato-gguf).
 
 ```bash
-python py/fetch.py models/
+python3 py/fetch.py models/
 ```
 
 This downloads `dettato-f16.gguf` and checks its sha256. You could also make the same file yourself from the safetensors

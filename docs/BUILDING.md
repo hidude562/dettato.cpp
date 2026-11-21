@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- CMake 3.24 or later.
+- CMake 3.24 or later, and Python 3 for `py/fetch.py` (standard library only).
 - A C++23 compiler and standard library with `std::expected`: GCC 13+, Clang 19+ (with GCC's libstdc++, older Clang
   versions do not get `std::expected`; with libc++, Clang 17+), Apple Clang 15+ (Xcode 15), or MSVC 19.38+ (Visual
   Studio 2022 17.8).
@@ -71,5 +71,8 @@ faster.
   back to it). Every op the graphs use is in ggml-metal's supported set for Apple Silicon GPUs, on both ggml versions;
   Metal has not yet run on a real Mac (reports welcome). The transcriber uses ggml's flash attention where the backend
   supports it and the explicit softmax otherwise.
-- **Windows**: CI builds with MSVC and runs the tests on the CPU. Vulkan should build with the SDK installed but is not
-  tested yet. The host loops use their portable scalar paths there.
+- **Windows**: CI builds with MSVC, CPU only and with the Vulkan backend (Vulkan SDK 1.4.363, Ninja, from a Visual
+  Studio developer prompt so that ggml's shader generator finds `cl`), and runs the tests on the CPU; Vulkan has not
+  run on a Windows GPU yet. With its own ggml, dettato.cpp delay-loads `vulkan-1.dll` and checks for it before the first
+  Vulkan call, so a Vulkan build still starts, on the CPU, on a machine without Vulkan; inside a host that brings ggml
+  (NeuralNote, through muscriptor.cpp) the same check applies. The host loops use their portable scalar paths there.

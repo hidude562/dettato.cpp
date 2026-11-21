@@ -99,3 +99,7 @@ both libraries on one ggml. Two differences matter:
   (0.8 -> 2.0 GB over 16 calls); `transcribe()` ends with `malloc_trim`.
 - On the CPU, `ggml_backend_cpu_set_abort_callback` lets `should_cancel` stop a graph at its next node instead of
   after it (a transcriber window takes seconds there).
+- ggml's device registry creates every backend it was built with. On Windows, hosts delay-load `vulkan-1.dll` so that
+  they start on machines without Vulkan, and the first Vulkan call then faults when the loader is missing:
+  `Backend::deviceCount()` looks for the loader before it touches the registry (the CPU backend is never taken from
+  it), and keeps implicit Vulkan layers out of the instance ggml creates, as muscriptor.cpp does.

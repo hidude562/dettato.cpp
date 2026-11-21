@@ -10,9 +10,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <random>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -184,9 +186,33 @@ TEST_CASE("transcribe() checks its arguments and can be cancelled", "[model]")
     CHECK(mid.error() == dtt::Error::Cancelled);
     CHECK(waited < 10.0);
 
+    // and cancelled after the transcriber, when the instrument tracks are being made
+    asked.reset();
+    o.on_progress = [&](const dtt::Progress& pr) {
+        if (!asked && pr.stage == dtt::Stage::Grouping) {
+            asked = std::chrono::steady_clock::now();
+        }
+    };
+    const auto late = p.transcribe(testSignal(16000.0), 16000.0, o);
+    REQUIRE(asked.has_value());
+    const double waited_late = std::chrono::duration<double>(std::chrono::steady_clock::now() - *asked).count();
+    std::printf("cancel: returned %.2f s after should_cancel turned true in the grouping stage\n", waited_late);
+    CHECK(late.error() == dtt::Error::Cancelled);
+    CHECK(waited_late < 10.0);
+
     const auto silent = p.transcribe(std::vector<float>(16000 * 3, 0.0f), 16000.0); // and it still works after a cancel
     REQUIRE(silent.has_value());
     CHECK(silent->notes.empty());
+
+    // samples that are not finite are read as silence: the notes around them still come out
+    std::vector<float> damaged = testSignal(16000.0);
+    std::fill(damaged.begin() + 100, damaged.begin() + 110, std::numeric_limits<float>::quiet_NaN());
+    damaged[16000 * 7] = std::numeric_limits<float>::infinity();
+    const auto rd = p.transcribe(damaged, 16000.0);
+    REQUIRE(rd.has_value());
+    CHECK(hasNote(*rd, 60, 0.5));
+    CHECK(hasNote(*rd, 72, 5.0));
+    CHECK(p.transcribe(std::span<const float>{}, 44100.0).has_value()); // and an empty signal is not an error
 }
 
 namespace
@@ -266,6 +292,25 @@ TEST_CASE("the first GPU gives the CPU's notes", "[model][gpu]")
     const size_t dc = drumHits(*rc), dg = drumHits(*rg);
     CHECK((dc > dg ? dc - dg : dg - dc) <= std::max<size_t>(1, dc / 20));
     CHECK(std::abs(rg->tuning_cents - rc->tuning_cents) < 1.0);
+
+    // a cancel after the transcriber, while the grouper and the drums run on the GPU, stops at their next network call
+    std::optional<std::chrono::steady_clock::time_point> asked;
+    dtt::TranscribeOptions oc;
+    oc.on_progress = [&](const dtt::Progress& pr) {
+        if (!asked && pr.stage == dtt::Stage::Repairing) {
+            asked = std::chrono::steady_clock::now();
+        }
+    };
+    oc.should_cancel = [&] { return asked.has_value(); };
+    const auto cancelled = g->transcribe(x, 44100.0, oc);
+    REQUIRE(asked.has_value());
+    const double waited = std::chrono::duration<double>(std::chrono::steady_clock::now() - *asked).count();
+    std::printf("GPU cancel: returned %.2f s after should_cancel turned true behind the transcriber\n", waited);
+    CHECK(cancelled.error() == dtt::Error::Cancelled);
+    CHECK(waited < 3.0);
+    const auto again = g->transcribe(x, 44100.0); // and the pipeline still works
+    REQUIRE(again.has_value());
+    CHECK(pitched(*again).size() == ng);
 }
 
 TEST_CASE("Auto loads on a GPU that runs everything, else on the CPU", "[model]")

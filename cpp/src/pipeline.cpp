@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
 #include <future>
+#include <mutex>
 #include <string>
 #include <tuple>
 
@@ -257,12 +259,42 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
     Impl& I = *mImpl;
     I.error.clear();
     const HeapTrim trim_on_return;
-    // on the CPU the networks also poll should_cancel themselves; cleared on return, whatever it captured
+    // A NaN or an infinity (a damaged file) would spread through every transform and leave no notes at all: read
+    // such samples as silence.
+    std::vector<float> finite;
+    if (std::any_of(mono.begin(), mono.end(), [](float v) { return !std::isfinite(v); })) {
+        finite.assign(mono.begin(), mono.end());
+        std::replace_if(finite.begin(), finite.end(), [](float v) { return !std::isfinite(v); }, 0.0f);
+        mono = finite;
+    }
+    // should_cancel is polled between the stages, before every network call (on both backend instances: on a GPU the
+    // drums run on a second thread) and, on the CPU, at every graph node. The calls are serialised and the answer
+    // latches. Cleared from the backends on return, whatever it captured.
+    std::mutex cancel_mutex;
+    std::atomic<bool> cancelled{false};
+    const std::function<bool()> poll_cancel = [&]() -> bool {
+        if (!cancelled.load() && o.should_cancel) {
+            const std::lock_guard<std::mutex> lock(cancel_mutex);
+            if (!cancelled.load() && o.should_cancel()) {
+                cancelled.store(true);
+            }
+        }
+        return cancelled.load();
+    };
     struct CancelScope {
-        Backend& be;
-        ~CancelScope() { be.setCancel({}); }
-    } cancel_scope{*I.be};
-    I.be->setCancel(o.should_cancel);
+        Impl& impl;
+        ~CancelScope()
+        {
+            impl.be->setCancel({});
+            if (impl.be_drums) {
+                impl.be_drums->setCancel({});
+            }
+        }
+    } cancel_scope{I};
+    I.be->setCancel(poll_cancel);
+    if (I.be_drums) {
+        I.be_drums->setCancel(poll_cancel);
+    }
     if (sample_rate < 16000.0 || !std::isfinite(sample_rate)) {
         I.error = "sample rate must be at least 16 kHz";
         return std::unexpected(Error::InvalidArgument);
@@ -278,7 +310,7 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         if (o.on_progress) {
             o.on_progress({s, f, base + w * f});
         }
-        return !(o.should_cancel && o.should_cancel());
+        return !poll_cancel();
     };
     // DETTATO_TIMING=1: per-stage wall times on stderr
     const bool timing = std::getenv("DETTATO_TIMING") != nullptr;

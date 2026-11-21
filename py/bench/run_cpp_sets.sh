@@ -17,7 +17,7 @@ for s in bach10 dcs phenicx rwc_r; do
   while read -r id; do
     if [ -f "$SETS/$s/full/$id.flac" ]; then
       w=$OUT/wav/$s/$id.wav
-      [ -f "$w" ] || { mkdir -p "$(dirname "$w")"; ffmpeg -v error -y -i "$SETS/$s/full/$id.flac" -c:a pcm_f32le "$w"; }
+      [ -f "$w" ] || { mkdir -p "$(dirname "$w")"; ffmpeg -nostdin -v error -y -i "$SETS/$s/full/$id.flac" -c:a pcm_f32le "$w"; }
       ins+=("$w")
     else
       ins+=("$SETS/$s/wav/$id.wav")

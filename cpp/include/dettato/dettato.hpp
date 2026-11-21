@@ -81,7 +81,10 @@ struct Progress {
 struct TranscribeOptions {
     /** Run the drum model. It only runs when the source rate is at least 40 kHz (it reads the 7.8-20 kHz band). */
     bool drums = true;
-    /** Polled between windows; returning true makes transcribe() return Error::Cancelled. */
+    /**
+     * Returning true makes transcribe() return Error::Cancelled. Polled before every network call, and on the CPU inside
+     * them too, so it should be cheap. It can be called from a second thread, never from two at once.
+     */
     std::function<bool()> should_cancel;
     std::function<void(const Progress&)> on_progress;
 };
@@ -120,7 +123,8 @@ public:
 
     /**
      * Transcribes a whole recording: mono float32 at its own sample rate (any rate >= 16 kHz; it is resampled
-     * internally). Blocking: seconds to minutes. One call at a time per Pipeline.
+     * internally). Samples that are not finite are read as silence. Blocking: seconds to minutes. One call at a time
+     * per Pipeline.
      */
     std::expected<Transcription, Error> transcribe(std::span<const float> mono, double sample_rate,
                                                    const TranscribeOptions& options = {});

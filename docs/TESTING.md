@@ -14,17 +14,23 @@ cd cpp && cmake --preset cpu && cmake --build --preset cpu && ctest --preset cpu
 - `[model]`: a dettato GGUF on the CPU. A synthetic tone sequence (C4, E4, G4, C5 plucked tones) must come out as those
   notes at 44.1 kHz and at 16 kHz; the progress must be monotonic; argument checks and
   cancellation must work. When there is a GPU, the whole pipeline also runs on the first one and must give the CPU's
-  notes (95 % of them within 20 ms, the same drum model, the drum-hit count within 5 %). About a minute. They run when `DETTATO_TEST_MODEL` names the GGUF and are skipped otherwise:
+  notes (95 % of them within 20 ms, the same drum model, the drum-hit count within 5 %). One to three minutes on 4 to
+  8 cores. They run when `DETTATO_TEST_MODEL` names the GGUF, by its full path (the tests do not run from the source
+  directory), and are skipped otherwise:
 
 ```bash
-python py/fetch.py models/                        # downloads dettato-f16.gguf and checks its sha256
-DETTATO_TEST_MODEL=models/dettato-f16.gguf ctest --preset cpu
+python3 py/fetch.py models/                       # from the repository root: dettato-f16.gguf, sha256 checked
+cd cpp && DETTATO_TEST_MODEL=$PWD/../models/dettato-f16.gguf ctest --preset cpu
 ```
 
-CI runs the `[pure]` tests on Linux (GCC, Clang), macOS (arm64, Metal) and Windows (MSVC), and the `[model]` tests on
-Linux and macOS. The macOS runners' GPU (Apple's paravirtual device) cannot run ggml-metal's matmuls, so there the GPU test
-skips and the Auto test checks the fall-back to the CPU. Linux and macOS also build and test against the ggml muscriptor.cpp pins (the DamRsn/ggml v0.23 fork),
-and Linux builds the Vulkan backend on both ggml versions.
+CI runs the `[pure]` tests on Linux (GCC, Clang), macOS (arm64, Metal) and Windows (MSVC, without and with the Vulkan
+backend), and the `[model]` tests on Linux, macOS and the Windows Vulkan build. No CI machine has a GPU ggml can use,
+so everywhere the GPU test skips and the networks run on the CPU: the macOS runners' GPU (Apple's paravirtual device)
+cannot run ggml-metal's matmuls, and there the Auto test checks the fall-back to the CPU; the Windows runners have no
+Vulkan device, and no Vulkan loader either once the SDK comes from the cache, which is the case the delay-loaded
+`vulkan-1.dll` and the loader check are for. Linux and macOS also build and test against the ggml muscriptor.cpp pins (the DamRsn/ggml v0.23 fork),
+and Linux builds the Vulkan backend on both ggml versions. The GPU test itself runs on the development machine (an RTX
+5060, on both ggml versions).
 
 ## Parity with the PyTorch package
 

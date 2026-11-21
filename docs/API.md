@@ -30,7 +30,8 @@ for (const dtt::Note& n : r->notes) {
 
 `availableDevices()` lists the GPUs ggml finds (Metal, or Vulkan devices in the loader's order), then the CPU, always
 last. Each `Device` has a `name`, a `backend` (`"Metal"`, `"Vulkan"` or `"CPU"`), `integrated` and `memory_total`
-(bytes, 0 when unknown). The list is built once per process; the first call can take a second (the Vulkan loader).
+(bytes, 0 when unknown). The list is built once per process; the first call can take a second (the Vulkan loader). On
+Windows, a build with the Vulkan backend on a machine without a Vulkan loader (`vulkan-1.dll`) lists the CPU alone.
 
 `LoadOptions::device` is an index into that list. Left empty, `load()` picks the first discrete GPU, else the first
 integrated one, else the CPU; when that GPU cannot run one of the networks (or cannot start), it loads on the CPU instead
@@ -62,7 +63,8 @@ evidence repairer and the grouper use the first. Their weights are shared.
 ## Transcribing
 
 `transcribe(mono, sample_rate, options)` takes the whole recording as mono float32 at its own rate (any rate from 16 kHz;
-downmix stereo first). It returns a `Transcription`:
+downmix stereo first). Samples that are not finite (a damaged file) are read as silence, and an empty or very short
+signal gives an empty transcription, not an error. It returns a `Transcription`:
 
 - `tracks`: the pitched instrument tracks, largest first, then the drum track if there are drums. Each has a `name`
   ("piano", "alto sax", ...), a General MIDI `program` and `is_drum`.
@@ -81,9 +83,11 @@ downmix stereo first). It returns a `Transcription`:
 
 - `drums`: run the drum model. It reads the 7.8-20 kHz band, so it only runs when `sample_rate` is at least 40 kHz.
   Below that, there is no drum track.
-- `should_cancel`: returning true ends the call with `Error::Cancelled`. Polled between windows and between stages,
-  and on the CPU also by the networks at every graph node, so a cancel takes effect within about a second on either
-  device.
+- `should_cancel`: returning true ends the call with `Error::Cancelled`. Polled between the stages and before every
+  network call, and on the CPU also inside the networks at every graph node, so keep it cheap (reading a flag). The
+  drums run on a second thread on a GPU and poll it too, but it is never called from two threads at once. A cancel
+  during the transcriber, which is most of a run, returns within a fraction of a second (measured 0.03-0.3 s); host
+  loops between the network calls (resampling, the decodes) are not interrupted.
 - `on_progress`: `Progress{stage, stage_fraction, overall}`. The stages are `Transcribing` (the tuning check and the
   transcriber), `Repairing`, `Grouping` and `Drums`; `overall` weights them by their typical share of the time on a GPU
   and never goes backwards.
@@ -98,10 +102,10 @@ for a 4-min song on an RTX 5060, a few minutes on a CPU), so a plugin calls it f
 
 Peak resident memory of `dettato_cli` (measured, f16 weights):
 
-| | 30 s clip | 4-min song |
-|---|---|---|
-| RTX 5060 (Vulkan) | 0.8 GB | 1.4 GB |
-| CPU | 1.0 GB | 1.5 GB |
+| | 30 s clip | 4-min song | 12-min recording |
+|---|---|---|---|
+| RTX 5060 (Vulkan) | 0.8 GB | 1.4 GB | 2.8 GB |
+| CPU | 1.0 GB | 1.5 GB | not measured |
 
 On the CPU the networks' compute buffers are host memory (about 0.5 GB each for the transcriber and the grouper, more
 for the drums on a long song), so the pipeline frees each one after its stage. What grows with the length of the

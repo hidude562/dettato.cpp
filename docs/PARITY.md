@@ -54,7 +54,36 @@ one-pass flow differs from the package only on recordings that are off A440 (`do
 - Vulkan f16: worst tensor 9.3e-3 (an expert's LayerNorm after two 12,000-step GRU layers); hits 99.4 – 100 %.
 - With our resampler instead of soxr: 98.3 – 100 % of hits identical.
 
-## End to end (`py/bench/compare_e2e.py`, 4-min test song, Vulkan f16 vs the package on CUDA)
+## End to end (`py/bench/compare_e2e.py`, RTX 5060 with Vulkan and f16 weights vs the package on CUDA)
 
-Pitched notes 3840 vs 3846 (onset F1 0.995), drum hits 971 vs 976 (F1 0.996), track assignment ARI 0.978, the same nine
-tracks (piano, trumpet, trombone, synth strings, harp, cello, violin, oboe, drums) with counts within a few notes.
+The pipeline differs from the package's defaults in two ways: one transcriber pass on the retuned audio, and 8 s windows
+every 4 s instead of every 2 s. So it is compared with the package twice, as published and with its first pass at the
+same 4 s step, and the package's two settings are compared with each other to show how much that step alone moves.
+Both recordings are in tune, so the single pass changes nothing here.
+
+4-min song (nine instruments and drums):
+
+| | pitched notes | onset F1 | drum hits | drum F1 | track ARI |
+|---|---|---|---|---|---|
+| dettato.cpp vs the package at the same 4 s step | 3830 vs 3828 | 0.996 | 971 vs 976 | 0.996 | 0.937 |
+| dettato.cpp vs the package as published | 3830 vs 3846 | 0.982 | 971 vs 976 | 0.996 | 0.911 |
+| the package at 4 s vs the package as published | 3828 vs 3846 | 0.982 | 976 vs 976 | 1.000 | 0.915 |
+
+30 s of the same song:
+
+| | pitched notes | onset F1 | drum hits | drum F1 | track ARI |
+|---|---|---|---|---|---|
+| dettato.cpp vs the package at the same 4 s step | 566 vs 566 | 0.995 | 179 vs 177 | 0.994 | 0.969 |
+| dettato.cpp vs the package as published | 566 vs 571 | 0.982 | 179 vs 177 | 0.994 | 0.867 |
+| the package at 4 s vs the package as published | 566 vs 571 | 0.983 | 177 vs 177 | 1.000 | 0.893 |
+
+Onset F1: same pitch, onsets within 50 ms. Track ARI: the adjusted Rand index of the track assignment over the notes
+both runs found.
+
+The notes and drum hits follow the package closely. The tracks are the unstable part, in the package as much as here:
+the grouper's decode is a clustering, and a few notes moving changes which clusters merge. On the 4-min song all three
+runs write piano, trumpet, trombone, cello, harp, violin, oboe and drums, and split the string and synth notes
+differently: dettato.cpp into synth lead (196 notes) and string ensemble (201), the package at 4 s into string ensemble
+(335) and synth strings (206), the package as published into synth strings (261) with more of them in the trombone track
+(697 notes against 501 and 393). Against the reference instruments of the benchmark recordings the three score the same
+(`docs/BENCHMARK.md`).
