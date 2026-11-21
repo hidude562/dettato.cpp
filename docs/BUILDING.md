@@ -54,8 +54,9 @@ target_link_libraries(my_app PRIVATE dettato_ggml)
 ```
 
 A binary can only hold one copy of ggml. If the host already builds ggml (NeuralNote builds it for muscriptor.cpp), add
-ggml first: `dettato.cpp` sees the `ggml` target and links against it instead of fetching its own. That ggml must be
-v1.0.0 or later. For the CPU backend, `GGML_LLAMAFILE=ON` makes the small f32 matmuls of the drum and grouper graphs 2-4x
+ggml first: `dettato.cpp` sees the `ggml` target and links against it instead of fetching its own. That ggml can be
+v1.0.0, or the v0.23 fork muscriptor.cpp pins (DamRsn/ggml `b01bbb8`), so the two libraries can share one: add
+muscriptor.cpp first and dettato.cpp builds on its ggml. CI builds and tests dettato.cpp on both. For the CPU backend, `GGML_LLAMAFILE=ON` makes the small f32 matmuls of the drum and grouper graphs 2-4x
 faster.
 
 `DETTATO_BUILD_TOOLS` and `DETTATO_BUILD_TESTS` default to OFF under `add_subdirectory`.

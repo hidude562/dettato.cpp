@@ -4,6 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -36,8 +38,8 @@ dtt::Pipeline& cpuPipeline()
     return p;
 }
 
-/** Plucked harmonic tones (C4, E4, G4, then C5) with a few clicks, at 44.1 kHz. */
-std::vector<float> testSignal(double rate)
+/** Plucked harmonic tones (C4, E4, G4, then C5) and a few noise bursts: 8 s, repeated reps times. */
+std::vector<float> testSignal(double rate, int reps = 1)
 {
     struct Tone {
         int pitch;
@@ -56,7 +58,20 @@ std::vector<float> testSignal(double rate)
             x[i] += static_cast<float>(0.25 * v * std::min(1.0, s / 0.003));
         }
     }
-    return x;
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<float> u(-1.0f, 1.0f);
+    for (double t0 = 6.75; t0 < 7.9; t0 += 0.25) { // short noise bursts: something for the drum model
+        const size_t a = static_cast<size_t>(t0 * rate), n = static_cast<size_t>(0.08 * rate);
+        for (size_t i = 0; i < n && a + i < x.size(); i++) {
+            x[a + i] += 0.4f * u(rng) * static_cast<float>(std::exp(-static_cast<double>(i) / (0.012 * rate)));
+        }
+    }
+    std::vector<float> y;
+    y.reserve(x.size() * static_cast<size_t>(reps));
+    for (int r = 0; r < reps; r++) {
+        y.insert(y.end(), x.begin(), x.end());
+    }
+    return y;
 }
 
 bool hasNote(const dtt::Transcription& r, int pitch, double onset)
@@ -155,4 +170,78 @@ TEST_CASE("transcribe() checks its arguments and can be cancelled", "[model]")
     const auto silent = p.transcribe(std::vector<float>(16000 * 3, 0.0f), 16000.0); // and it still works after a cancel
     REQUIRE(silent.has_value());
     CHECK(silent->notes.empty());
+}
+
+namespace
+{
+std::vector<const dtt::Note*> pitched(const dtt::Transcription& r)
+{
+    std::vector<const dtt::Note*> v;
+    for (const dtt::Note& n : r.notes) {
+        if (!r.tracks[n.track].is_drum) {
+            v.push_back(&n);
+        }
+    }
+    return v;
+}
+
+/** Notes of a with a note of the same pitch in b starting within 20 ms. */
+size_t matched(const dtt::Transcription& a, const dtt::Transcription& b)
+{
+    size_t m = 0;
+    const auto pb = pitched(b);
+    for (const dtt::Note* n : pitched(a)) {
+        m += std::any_of(pb.begin(), pb.end(), [&](const dtt::Note* q) { return q->pitch == n->pitch && std::abs(q->onset - n->onset) < 0.02; });
+    }
+    return m;
+}
+
+size_t drumHits(const dtt::Transcription& r)
+{
+    return r.notes.size() - pitched(r).size();
+}
+} // namespace
+
+TEST_CASE("the first GPU gives the CPU's notes", "[model][gpu]")
+{
+    if (testModel() == nullptr) {
+        SKIP("DETTATO_TEST_MODEL is not set");
+    }
+    const auto devs = dtt::availableDevices();
+    if (devs.size() < 2) {
+        SKIP("no GPU device");
+    }
+    std::printf("GPU: %s (%s), %.1f GB\n", devs[0].name.c_str(), devs[0].backend.c_str(), devs[0].memory_total / 1e9);
+    dtt::LoadOptions o;
+    o.device = 0;
+    std::string why;
+    o.error_detail = &why;
+    auto g = dtt::Pipeline::load(testModel(), o);
+    INFO("load on " << devs[0].name << ": " << why);
+    REQUIRE(g.has_value());
+
+    const auto x = testSignal(44100.0, 5); // 40 s: the transcriber and the grouper run batches of several windows
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto rg = g->transcribe(x, 44100.0);
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    INFO(g->lastErrorMessage());
+    REQUIRE(rg.has_value());
+    const auto rc = cpuPipeline().transcribe(x, 44100.0);
+    REQUIRE(rc.has_value());
+
+    const size_t nc = pitched(*rc).size(), ng = pitched(*rg).size();
+    std::printf("GPU: 40 s in %.2f s; pitched notes CPU %zu, GPU %zu, matched %zu / %zu; drum hits CPU %zu (%s), GPU %zu (%s); "
+                "tracks CPU %zu, GPU %zu\n",
+                secs, nc, ng, matched(*rc, *rg), matched(*rg, *rc), drumHits(*rc), rc->drum_model.c_str(), drumHits(*rg),
+                rg->drum_model.c_str(), rc->tracks.size(), rg->tracks.size());
+    CHECK(hasNote(*rg, 60, 0.5));
+    CHECK(hasNote(*rg, 64, 2.0));
+    CHECK(hasNote(*rg, 67, 3.5));
+    CHECK(hasNote(*rg, 72, 5.0));
+    CHECK(matched(*rc, *rg) >= nc * 95 / 100);
+    CHECK(matched(*rg, *rc) >= ng * 95 / 100);
+    CHECK(rg->drum_model == rc->drum_model);
+    const size_t dc = drumHits(*rc), dg = drumHits(*rg);
+    CHECK((dc > dg ? dc - dg : dg - dc) <= std::max<size_t>(1, dc / 20));
+    CHECK(std::abs(rg->tuning_cents - rc->tuning_cents) < 1.0);
 }

@@ -8,6 +8,7 @@
 
 #include "backend.hpp"
 #include "common.hpp"
+#include "ggml_compat.hpp"
 #include "evidence/features.hpp"
 #include "graph.hpp"
 #include "model_file.hpp"
@@ -286,10 +287,10 @@ ggml_tensor* RepairerNet::block(ggml_context* ctx, ggml_tensor* x, int i, ggml_t
         const int nq = std::min(Qc, Np - c0);
         ggml_tensor* qc = ggml_view_3d(ctx, q, hd, H, nq, q->nb[1], q->nb[2], static_cast<size_t>(c0) * q->nb[2]);
         ggml_tensor* kq = ggml_mul_mat(ctx, kp, ggml_permute(ctx, qc, 0, 2, 1, 3)); // [Np, nq, H]
-        ggml_prec_set_acc(kq, GGML_PREC_F32);
+        accF32(kq);
         kq = ggml_soft_max_ext(ctx, kq, mask, scale, 0.0f);
         ggml_tensor* o = ggml_mul_mat(ctx, vt, kq); // [hd, nq, H]
-        ggml_prec_set_acc(o, GGML_PREC_F32);
+        accF32(o);
         o = ggml_reshape_2d(ctx, ggml_cont(ctx, ggml_permute(ctx, o, 0, 2, 1, 3)), D, nq);
         att = att == nullptr ? o : ggml_concat(ctx, att, o, 1);
     }

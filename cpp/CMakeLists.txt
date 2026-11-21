@@ -17,8 +17,8 @@ option(DETTATO_NATIVE "Optimize ggml for the build machine's CPU (never for a sh
 # --- ggml -----------------------------------------------------------------
 #
 # A host that already builds ggml (NeuralNote builds it for muscriptor.cpp) provides the targets, and this library links
-# against them: a binary can only hold one ggml. The host's ggml must be v1.0.0 or later (the API this code is written
-# against). Otherwise ggml v1.0.0 is fetched; to use a local checkout, configure with
+# against them: a binary can only hold one ggml. The host's ggml can be v1.0.0 or the v0.23 fork muscriptor.cpp pins
+# (DamRsn/ggml b01bbb8; src/ggml_compat.hpp). Otherwise ggml v1.0.0 is fetched; to use a local checkout, configure with
 #   -DFETCHCONTENT_SOURCE_DIR_GGML=/path/to/ggml
 set(DETTATO_GGML_COMMIT 417a024b4fb6bc3116d41af7c067166a039bdf12)   # v1.0.0
 

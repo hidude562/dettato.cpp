@@ -2,6 +2,7 @@
 
 #include "backend.hpp"
 #include "common.hpp"
+#include "ggml_compat.hpp"
 
 namespace dtt
 {
@@ -76,7 +77,7 @@ int StaticGraph::nodes() const
 ggml_tensor* linear(ggml_context* ctx, ggml_tensor* w, ggml_tensor* b, ggml_tensor* x)
 {
     ggml_tensor* y = ggml_mul_mat(ctx, w, x);
-    ggml_prec_set_acc(y, GGML_PREC_F32);
+    accF32(y);
     return b != nullptr ? ggml_add(ctx, y, b) : y;
 }
 

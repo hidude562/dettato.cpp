@@ -31,12 +31,18 @@ public:
 
     /** @return The first op of the graph the backend cannot run, as "OP (types)", or empty. */
     std::string firstUnsupportedOp(struct ggml_cgraph* graph) const;
+    /**
+     * Whether a matmul may broadcast its first operand over dim 3 (a [K, M, C, 1] x b [K, N, C, B]). ggml-vulkan before
+     * v1.0.0 cannot (the v0.23 fork muscriptor.cpp pins); the PitchMix blocks then repeat their matrices per window.
+     */
+    bool matmulBroadcastsDim3() const;
 
     /** Lists ggml's devices, one per line, with their indices. */
     static std::string listDevices();
 
 private:
     ggml_backend_t mBackend = nullptr;
+    mutable int mBcast3 = -1; // matmulBroadcastsDim3(), probed once
     bool mIsCpu = true;
     int mThreads = 1;
     std::string mName;

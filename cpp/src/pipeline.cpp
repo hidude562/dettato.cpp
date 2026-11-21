@@ -138,6 +138,9 @@ std::expected<Pipeline, Error> Pipeline::load(const std::filesystem::path& path,
     std::string dev = "auto";
     if (options.device) {
         if (*options.device >= devices.size()) {
+            if (options.error_detail) {
+                *options.error_detail = format("device %zu does not exist (%zu devices)", *options.device, devices.size());
+            }
             return std::unexpected(Error::DeviceUnavailable);
         }
         dev = *options.device + 1 == devices.size() ? "cpu" : std::to_string(gpuIndices()[*options.device]);
@@ -166,6 +169,9 @@ std::expected<Pipeline, Error> Pipeline::load(const std::filesystem::path& path,
         }
     } catch (const Failure& e) {
         const std::string m = e.what();
+        if (options.error_detail) {
+            *options.error_detail = m;
+        }
         if (m.find("cannot run") != std::string::npos || m.find("initialise") != std::string::npos) {
             return std::unexpected(Error::DeviceUnavailable);
         }

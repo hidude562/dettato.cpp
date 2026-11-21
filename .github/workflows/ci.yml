@@ -30,10 +30,21 @@ jobs:
             cc: clang-19
             cxx: clang++-19
             apt: clang-19
-          - name: macos-arm64 (Metal)
+          - name: macos-arm64 (Metal, with the model tests)
             os: macos-15
+            model: true
           - name: windows-msvc (CPU)
             os: windows-2022
+          - name: linux-gcc, muscriptor.cpp's ggml (CPU, with the model tests)
+            os: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            model: true
+            ggml_fork: true
+          - name: macos-arm64, muscriptor.cpp's ggml (Metal, with the model tests)
+            os: macos-15
+            model: true
+            ggml_fork: true
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +52,19 @@ jobs:
         if: matrix.apt
         run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
 
+      - name: Fetch muscriptor.cpp's ggml (the DamRsn/ggml v0.23 fork it pins)
+        if: matrix.ggml_fork
+        shell: bash
+        run: |
+          git clone -q https://github.com/DamRsn/ggml.git ggml-fork
+          git -C ggml-fork checkout -q b01bbb837ebb3a211e133566324fa7631ee723de
+          echo "GGML_ARGS=-DFETCHCONTENT_SOURCE_DIR_GGML=$PWD/ggml-fork" >> "$GITHUB_ENV"
+
       - name: Configure
         shell: bash
         run: |
           if [ -n "${{ matrix.cc }}" ]; then export CC=${{ matrix.cc }} CXX=${{ matrix.cxx }}; fi
-          cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=OFF
+          cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=OFF $GGML_ARGS
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
@@ -64,21 +83,39 @@ jobs:
         if: matrix.model
         run: python3 py/fetch.py models
 
-      - name: Tests with the model (CPU)
+      - name: Devices
+        if: matrix.model
+        run: ./build/tools/dettato_cli --list-devices
+
+      - name: Tests with the model (CPU, and the GPU when there is one)
         if: matrix.model
         env:
           DETTATO_TEST_MODEL: ${{ github.workspace }}/models/dettato-f16.gguf
         run: ./build/tests/dettato_tests "[model]" --durations yes
 
   vulkan:
-    name: linux-vulkan (build only)
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-vulkan (build only)
+          - name: linux-vulkan, muscriptor.cpp's ggml (build only)
+            ggml_fork: true
     steps:
       - uses: actions/checkout@v4
       - name: Install the Vulkan headers, SPIR-V headers and glslc
         run: sudo apt-get update && sudo apt-get install -y libvulkan-dev spirv-headers glslc
+      - name: Fetch muscriptor.cpp's ggml (the DamRsn/ggml v0.23 fork it pins)
+        if: matrix.ggml_fork
+        shell: bash
+        run: |
+          git clone -q https://github.com/DamRsn/ggml.git ggml-fork
+          git -C ggml-fork checkout -q b01bbb837ebb3a211e133566324fa7631ee723de
+          echo "GGML_ARGS=-DFETCHCONTENT_SOURCE_DIR_GGML=$PWD/ggml-fork" >> "$GITHUB_ENV"
       - name: Configure
-        run: cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=ON
+        run: cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=ON $GGML_ARGS
       - name: Build
         run: cmake --build build --parallel 4
       - name: Tests without weights

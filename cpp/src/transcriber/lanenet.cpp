@@ -8,6 +8,7 @@
 
 #include "backend.hpp"
 #include "common.hpp"
+#include "ggml_compat.hpp"
 #include "model_file.hpp"
 
 namespace dtt
@@ -57,7 +58,7 @@ namespace
     ggml_tensor* linear(ggml_context* ctx, ggml_tensor* w, ggml_tensor* b, ggml_tensor* x)
     {
         ggml_tensor* y = ggml_mul_mat(ctx, w, x);
-        ggml_prec_set_acc(y, GGML_PREC_F32);
+        accF32(y);
         return b != nullptr ? ggml_add(ctx, y, b) : y;
     }
 } // namespace
@@ -77,13 +78,17 @@ ggml_tensor* LaneNet::block(ggml_context* ctx, ggml_tensor* x, const Block& w, i
     y = ggml_conv_2d_dw_direct(ctx, w.dw_w, y, 1, 1, 0, (mKt / 2) * dil, 1, dil); // time conv, kernel kt, dilation dil
     // y + PitchMix(y): each channel's P x P banded matrix (from its taps, centre 1 for the residual), one batched matmul
     ggml_tensor* pm = ggml_reshape_3d(ctx, ggml_mul_mat(ctx, mPmixS, w.pmix), P, P, C); // [Pj, Pi, C]
+    if (!mPmixBroadcast && B > 1) {
+        pm = ggml_repeat_4d(ctx, pm, P, P, C, B);                                       // [Pj, Pi, C, B]
+    }
     y = ggml_mul_mat(ctx, pm, y);                                                       // [Pi, T, C, B]
-    ggml_prec_set_acc(y, GGML_PREC_F32);
+    ggml_set_name(y, "pmix");
+    accF32(y);
     y = ggml_cont(ctx, fromCwhn(ctx, y));                                               // [C, P, T, B]
     // pw1 (BN and the depthwise bias folded: per-lane bias) -> GELU -> pw2 (layer scale folded), residual
     const int64_t n = T * B;
     ggml_tensor* h = ggml_mul_mat(ctx, w.pw1_w, ggml_reshape_2d(ctx, y, C, P * n)); // one 2D matmul
-    ggml_prec_set_acc(h, GGML_PREC_F32);
+    accF32(h);
     h = ggml_add(ctx, ggml_reshape_3d(ctx, h, h->ne[0], P, n), w.pw1_b);             // per-lane bias
     h = ggml_gelu_erf(ctx, ggml_reshape_2d(ctx, h, h->ne[0], P * n));
     h = linear(ctx, w.pw2_w, w.pw2_b, h);
@@ -130,14 +135,14 @@ ggml_tensor* LaneNet::attention(ggml_context* ctx, ggml_tensor* x, const Attn& w
         // fused softmax(q k^T * scale + mask) v; the result comes back permuted, [Dp, H, Lq, N]
         ggml_tensor* m16 = mask != nullptr ? ggml_cast(ctx, mask, GGML_TYPE_F16) : nullptr; // flash attention reads an f16 mask
         o = ggml_flash_attn_ext(ctx, q, k, ggml_permute(ctx, v, 0, 2, 1, 3), m16, scale, 0.0f, 0.0f);
-        ggml_prec_set_acc(o, GGML_PREC_F32);
+        accF32(o);
     } else {
         ggml_tensor* kq = ggml_mul_mat(ctx, k, q); // [Lk, Lq, H, N]
-        ggml_prec_set_acc(kq, GGML_PREC_F32);
+        accF32(kq);
         kq = ggml_soft_max_ext(ctx, kq, mask, scale, 0.0f);
         ggml_tensor* vt = ggml_cont(ctx, ggml_permute(ctx, v, 1, 2, 0, 3)); // [L, Dp, H, N]
         o = ggml_mul_mat(ctx, vt, kq);                                      // [Dp, Lq, H, N]
-        ggml_prec_set_acc(o, GGML_PREC_F32);
+        accF32(o);
         o = ggml_cont(ctx, ggml_permute(ctx, o, 0, 2, 1, 3));               // [Dp, H, L, N]
     }
     o = linear(ctx, w.out_w, w.out_b, ggml_reshape_2d(ctx, o, HD, L * N)); // zero columns for the pad dims; layer scale folded
@@ -169,7 +174,7 @@ ggml_tensor* LaneNet::gru(ggml_context* ctx, ggml_cgraph* gf, ggml_tensor* x, co
     for (int64_t t = 0; t < T; t++) {
         ggml_tensor* gt = ggml_view_3d(ctx, gi, 3 * H, N, 2, gi->nb[1], gi->nb[3], t * gi->nb[2]);
         ggml_tensor* gh = ggml_mul_mat(ctx, w.hh_w, h); // [3H, N, 2]
-        ggml_prec_set_acc(gh, GGML_PREC_F32);
+        accF32(gh);
         ggml_tensor* rz = ggml_sigmoid(ctx, ggml_add(ctx, ggml_view_3d(ctx, gt, 2 * H, N, 2, gt->nb[1], gt->nb[2], 0),
                                                          ggml_view_3d(ctx, gh, 2 * H, N, 2, gh->nb[1], gh->nb[2], 0)));
         ggml_tensor* r = ggml_view_3d(ctx, rz, H, N, 2, rz->nb[1], rz->nb[2], 0);
@@ -203,6 +208,7 @@ LaneNet::LaneNet(const ModelFile& mf, const Backend& be, int batch, int frames10
     mKt = static_cast<int>(mf.u32(p + ".kt"));
     mHeads = static_cast<int>(mf.tensor(p + ".head.b")->ne[0]);
         mPmixS = mf.tensor(p + ".pmix_S");
+    mPmixBroadcast = be.matmulBroadcastsDim3();
     mFlashAttn = !be.isCpu(); // on the CPU the explicit path is exact (flash attention reads an f16 mask) and as fast
     if (const char* e = std::getenv("DETTATO_FLASH_ATTN")) {
         mFlashAttn = e[0] != '0';
@@ -352,16 +358,20 @@ LaneNet::LaneNet(const ModelFile& mf, const Backend& be, int batch, int frames10
 
     };
     build();
-    std::string bad = be.firstUnsupportedOp(mGraph);
-    if (!bad.empty() && mFlashAttn && bad.find("FLASH_ATTN") != std::string::npos) {
+    // a backend without flash attention for these shapes gets the explicit softmax
+    for (std::string bad = be.firstUnsupportedOp(mGraph); !bad.empty(); bad = be.firstUnsupportedOp(mGraph)) {
+        if (mFlashAttn && bad.find("FLASH_ATTN") != std::string::npos) {
+            mFlashAttn = false;
+        } else {
+            break;
+        }
         ggml_free(mCtx);
         mCtx = nullptr;
         mDebug.clear();
         mHidden = mStem = nullptr;
-        mFlashAttn = false;
         build();
-        bad = be.firstUnsupportedOp(mGraph);
     }
+    const std::string bad = be.firstUnsupportedOp(mGraph);
     DTT_CHECK(bad.empty(), "%s cannot run the transcriber: %s", be.name().c_str(), bad.c_str());
     mAlloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(be.get()));
     DTT_CHECK(ggml_gallocr_alloc_graph(mAlloc, mGraph), "cannot allocate the transcriber's compute buffer");

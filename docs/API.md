@@ -49,6 +49,9 @@ Errors:
 | `DeviceUnavailable` | the device index is out of range, the backend cannot start, or it cannot run one of the networks' operations |
 | `Cancelled` | `should_cancel` returned true |
 
+`LoadOptions::error_detail`, when set, receives the reason for a failure (for instance the ggml operation a device cannot
+run), for logs.
+
 On a GPU, the pipeline creates two backend instances on the device: the drum model runs on the second one while the
 evidence repairer and the grouper use the first. Their weights are shared.
 

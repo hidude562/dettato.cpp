@@ -14,6 +14,7 @@
 
 #include "backend.hpp"
 #include "common.hpp"
+#include "ggml_compat.hpp"
 #include "drums/gru_host.hpp"
 #include "model_file.hpp"
 
@@ -35,7 +36,7 @@ namespace
     ggml_tensor* lin(ggml_context* ctx, ggml_tensor* w, ggml_tensor* b, ggml_tensor* x)
     {
         ggml_tensor* y = ggml_mul_mat(ctx, w, x);
-        ggml_prec_set_acc(y, GGML_PREC_F32);
+        accF32(y);
         return b != nullptr ? ggml_add(ctx, y, b) : y;
     }
 
@@ -63,7 +64,7 @@ namespace
             return ggml_permute(ctx, t, 0, 2, 1, 3);                                              // [D, N, H]
         };
         ggml_tensor* o = ggml_flash_attn_ext(ctx, part(0), part(1), part(2), nullptr, 1.0f / std::sqrt(static_cast<float>(D)), 0.0f, 0.0f);
-        ggml_prec_set_acc(o, GGML_PREC_F32);
+        accF32(o);
         return ggml_reshape_2d(ctx, o, da, N); // [D, H, N] -> head-major channels, as torch's transpose + reshape
     }
 
@@ -87,7 +88,7 @@ namespace
                 return ggml_sum_rows(ctx, t);
             }
             ggml_tensor* y = ggml_mul_mat(ctx, t, ggml_view_1d(ctx, ones, n, 0));
-            ggml_prec_set_acc(y, GGML_PREC_F32);
+            accF32(y);
             return y;
         };
         auto groupSum = [&](ggml_tensor* t) { // [A, B, C] -> [1, G]
@@ -535,7 +536,7 @@ std::vector<float> DrumNets::embedChunk(Exec& ex, const Net& w, const float* fea
             const int64_t f = d == 1 ? F - 1 - s : s;
             ggml_tensor* gt = ggml_view_2d(ctx, gi, 3 * m, N, gi->nb[2], f * gi->nb[1] + d * 3 * m * es);
             ggml_tensor* gh = ggml_mul_mat(ctx, hh_w, h); // [3m, N]
-            ggml_prec_set_acc(gh, GGML_PREC_F32);
+            accF32(gh);
             ggml_tensor* rz = ggml_sigmoid(ctx, ggml_add(ctx, ggml_view_2d(ctx, gt, 2 * m, N, gt->nb[1], 0),
                                                          ggml_view_2d(ctx, gh, 2 * m, N, gh->nb[1], 0)));
             ggml_tensor* r = ggml_view_2d(ctx, rz, m, N, rz->nb[1], 0);
@@ -745,7 +746,7 @@ std::vector<float> DrumNets::cqChunked(Exec& ex, const Expert& w, const float* c
                             onest = ex.input({Fq}, ones.data());
                         }
                         ggml_tensor* y = ggml_mul_mat(ctx, t, onest); // SUM_ROWS is one task on the CPU backend
-                        ggml_prec_set_acc(y, GGML_PREC_F32);
+                        accF32(y);
                         return y;
                     };
                     rs = bandSums(x);

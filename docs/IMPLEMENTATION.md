@@ -66,6 +66,18 @@ contraction is off for the library (explicit `std::fma` where the reference fuse
 exactly; the package computes it with an FFT convolution whose round-off is large next to silence, the one deliberate
 difference (`docs/PARITY.md`).
 
+## ggml versions
+
+The library builds on ggml v1.0.0 and on the v0.23 fork muscriptor.cpp pins (DamRsn/ggml `b01bbb8`), so a host can link
+both libraries on one ggml. Two differences matter:
+
+- v1.0.0 sets a result's accumulation precision with `ggml_prec_set_acc`; before it, one function per op did.
+  `accF32()` (`ggml_compat.hpp`) calls whichever the build's ggml has, picked at compile time.
+- ggml-vulkan before v1.0.0 cannot broadcast a matmul's first operand over dim 3. The two PitchMix blocks (the
+  transcriber's and the grouper's lane network) multiply each channel's lane matrix with a batch of windows in dim 3,
+  so where `Backend::matmulBroadcastsDim3()` says no, they repeat the matrices per window first (`ggml_repeat_4d`):
+  the same result, a little more memory traffic. No other graph broadcasts over dim 3.
+
 ## Lessons
 
 - A failed `GGML_ASSERT` tries to attach a debugger and hides the message: set `GGML_NO_BACKTRACE=1`.

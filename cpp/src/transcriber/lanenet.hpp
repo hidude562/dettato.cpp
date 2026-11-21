@@ -76,6 +76,8 @@ private:
     int mBatch, mT10, mT20, mT40, mC, mLanes, mLanesStem, mBins, mInCh, mHeads, mNH, mGruH, mKt;
     ggml_tensor* mPmixS = nullptr; // [K + 1, P * P] lane-shift indicator, see py/convert.py pmix_shift
     bool mFlashAttn = true;        // fused attention (ggml_flash_attn_ext); DETTATO_FLASH_ATTN=0 for the explicit path
+    bool mPmixBroadcast = true;    // PitchMix's matmul broadcasts the lane matrices over the batch (dim 3); where the
+                                   // backend cannot (Backend::matmulBroadcastsDim3), they are repeated per window
 
     ggml_context* mCtx = nullptr;
     ggml_cgraph* mGraph = nullptr;

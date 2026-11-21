@@ -77,14 +77,33 @@ std::string Backend::firstUnsupportedOp(ggml_cgraph* graph) const
     for (int i = 0; i < ggml_graph_n_nodes(graph); i++) {
         ggml_tensor* t = ggml_graph_node(graph, i);
         if (!ggml_backend_supports_op(mBackend, t)) {
-            std::string s = std::string(ggml_op_desc(t)) + " (" + ggml_type_name(t->type);
+            // the op, then each tensor's type and shape (ne, fastest first), marked when it is not contiguous
+            auto desc = [](const ggml_tensor* x) {
+                return format("%s [%lld, %lld, %lld, %lld]%s", ggml_type_name(x->type), static_cast<long long>(x->ne[0]),
+                              static_cast<long long>(x->ne[1]), static_cast<long long>(x->ne[2]),
+                              static_cast<long long>(x->ne[3]), ggml_is_contiguous(x) ? "" : " non-contiguous");
+            };
+            std::string s = std::string(ggml_op_desc(t)) + " " + t->name + ": " + desc(t);
             for (int j = 0; j < GGML_MAX_SRC && t->src[j] != nullptr; j++) {
-                s += std::string(", ") + ggml_type_name(t->src[j]->type);
+                s += std::string(j == 0 ? " <- " : ", ") + desc(t->src[j]);
             }
-            return s + ") " + t->name;
+            return s;
         }
     }
     return {};
+}
+
+bool Backend::matmulBroadcastsDim3() const
+{
+    if (mBcast3 < 0) {
+        ggml_init_params p{4 * ggml_tensor_overhead(), nullptr, true};
+        ggml_context* ctx = ggml_init(p);
+        ggml_tensor* a = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 8, 8, 2, 1);
+        ggml_tensor* b = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 8, 16, 2, 4);
+        mBcast3 = ggml_backend_supports_op(mBackend, ggml_mul_mat(ctx, a, b)) ? 1 : 0;
+        ggml_free(ctx);
+    }
+    return mBcast3 == 1;
 }
 
 std::string Backend::listDevices()

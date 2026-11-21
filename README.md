@@ -94,7 +94,8 @@ target_link_libraries(my_app PRIVATE dettato_ggml)
 ```
 
 If the host already builds ggml (NeuralNote does for muscriptor.cpp), add ggml first. Then dettato.cpp links to that ggml
-instead of fetching a second copy, since a binary can only have one ggml. It needs ggml v1.0.0 or newer.
+instead of fetching a second copy, since a binary can only have one ggml. It works with ggml v1.0.0 and with the older ggml
+that muscriptor.cpp uses, so NeuralNote can build both on one ggml.
 
 ## Docs
 

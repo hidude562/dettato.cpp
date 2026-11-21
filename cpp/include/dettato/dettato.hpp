@@ -55,6 +55,8 @@ struct LoadOptions {
     std::function<bool()> should_cancel;
     /** Fraction of the weights uploaded, 0..1. */
     std::function<void(float)> on_progress;
+    /** When load() fails, set to the reason (e.g. the operation a device cannot run), for logs. */
+    std::string* error_detail = nullptr;
 };
 
 enum class Stage : uint8_t {

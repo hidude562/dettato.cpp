@@ -13,15 +13,17 @@ cd cpp && cmake --preset cpu && cmake --build --preset cpu && ctest --preset cpu
   (16-bit, 24-bit, float, stereo downmix) and the API's error paths.
 - `[model]`: a dettato GGUF on the CPU. A synthetic tone sequence (C4, E4, G4, C5 plucked tones) must come out as those
   notes at 44.1 kHz and at 16 kHz; the progress must be monotonic; argument checks and
-  cancellation must work. About a minute. They run when `DETTATO_TEST_MODEL` names the GGUF and are skipped otherwise:
+  cancellation must work. When there is a GPU, the whole pipeline also runs on the first one and must give the CPU's
+  notes (95 % of them within 20 ms, the same drum model, the drum-hit count within 5 %). About a minute. They run when `DETTATO_TEST_MODEL` names the GGUF and are skipped otherwise:
 
 ```bash
 python py/fetch.py models/                        # downloads dettato-f16.gguf and checks its sha256
 DETTATO_TEST_MODEL=models/dettato-f16.gguf ctest --preset cpu
 ```
 
-CI runs the `[pure]` tests on Linux (GCC, Clang), macOS (arm64, Metal build) and Windows (MSVC), and the `[model]` tests on
-Linux.
+CI runs the `[pure]` tests on Linux (GCC, Clang), macOS (arm64, Metal) and Windows (MSVC), and the `[model]` tests on
+Linux and macOS. Linux and macOS also build and test against the ggml muscriptor.cpp pins (the DamRsn/ggml v0.23 fork),
+and Linux builds the Vulkan backend on both ggml versions.
 
 ## Parity with the PyTorch package
 

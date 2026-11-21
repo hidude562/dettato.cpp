@@ -8,6 +8,7 @@
 
 #include "backend.hpp"
 #include "common.hpp"
+#include "ggml_compat.hpp"
 #include "graph.hpp"
 #include "grouper/front.hpp"
 #include "model_file.hpp"
@@ -90,8 +91,11 @@ ggml_tensor* NoteNet::lblock(ggml_context* ctx, ggml_tensor* x, const LBlockW& w
     y = ggml_conv_2d_dw_direct(ctx, w.dw_w, y, 1, 1, 0, 3 * dil, 1, dil); // kernel (7, 1), dilation dil, same padding
     // y + PitchMix(y): each channel's P x P banded matrix from its taps (centre 1), one batched matmul
     ggml_tensor* pm = ggml_reshape_3d(ctx, ggml_mul_mat(ctx, mMf.tensor("gr.pmix_S"), w.pmix), P, P, C); // [Pj, Pi, C]
+    if (B > 1 && !mBe.matmulBroadcastsDim3()) {
+        pm = ggml_repeat_4d(ctx, pm, P, P, C, B); // [Pj, Pi, C, B] (Backend::matmulBroadcastsDim3)
+    }
     y = ggml_mul_mat(ctx, pm, y);                                                                         // [Pi, T, C, B]
-    ggml_prec_set_acc(y, GGML_PREC_F32);
+    accF32(y);
     y = ggml_cont(ctx, ggml_permute(ctx, y, 1, 2, 0, 3)); // [C, P, T, B]
     y = ggml_add(ctx, y, w.pm_bias);                      // the dw bias through (I + PitchMix): per (channel, lane)
     // LayerNorm2d over channels (affine folded into pw1) -> pw1 -> GELU -> pw2 (gamma folded), residual
@@ -115,11 +119,11 @@ ggml_tensor* NoteNet::lattn(ggml_context* ctx, ggml_tensor* x, const LAttnW& w)
     q = ggml_permute(ctx, q, 0, 2, 1, 3); // [D, P, NH, N]
     k = ggml_permute(ctx, k, 0, 2, 1, 3);
     ggml_tensor* kq = ggml_mul_mat(ctx, k, q); // [Pk, Pq, NH, N]
-    ggml_prec_set_acc(kq, GGML_PREC_F32);
+    accF32(kq);
     kq = ggml_soft_max_ext(ctx, kq, w.mask, 1.0f / std::sqrt(static_cast<float>(D)), 0.0f);
     ggml_tensor* vt = ggml_cont(ctx, ggml_permute(ctx, v, 1, 2, 0, 3)); // [P, D, NH, N]
     ggml_tensor* o = ggml_mul_mat(ctx, vt, kq);                         // [D, Pq, NH, N]
-    ggml_prec_set_acc(o, GGML_PREC_F32);
+    accF32(o);
     o = ggml_cont(ctx, ggml_permute(ctx, o, 0, 2, 1, 3)); // [D, NH, P, N]
     o = linear(ctx, w.out_w, w.out_b, ggml_reshape_3d(ctx, o, C, P, N));
     return ggml_add(ctx, x, ggml_reshape_4d(ctx, o, C, P, T, B));
@@ -140,11 +144,11 @@ ggml_tensor* NoteNet::block(ggml_context* ctx, Graph& g, ggml_tensor* x, const B
     q = ggml_permute(ctx, q, 0, 2, 1, 3); // [D, N, H, B]
     k = ggml_permute(ctx, k, 0, 2, 1, 3);
     ggml_tensor* kq = ggml_mul_mat(ctx, k, q); // [Nk, Nq, H, B]
-    ggml_prec_set_acc(kq, GGML_PREC_F32);
+    accF32(kq);
     kq = ggml_soft_max_ext(ctx, kq, g.mask, 1.0f / std::sqrt(static_cast<float>(D)), 0.0f);
     ggml_tensor* vt = ggml_cont(ctx, ggml_permute(ctx, v, 1, 2, 0, 3)); // [N, D, H, B]
     ggml_tensor* o = ggml_mul_mat(ctx, vt, kq);                         // [D, Nq, H, B]
-    ggml_prec_set_acc(o, GGML_PREC_F32);
+    accF32(o);
     o = ggml_cont(ctx, ggml_permute(ctx, o, 0, 2, 1, 3)); // [D, H, N, B]
     x = ggml_add(ctx, x, linear(ctx, w.o_w, w.o_b, ggml_reshape_2d(ctx, o, d, static_cast<int64_t>(N) * B)));
     ggml_tensor* h = ggml_gelu_erf(ctx, linear(ctx, w.ff0_w, w.ff0_b, ggml_norm(ctx, x, LN_EPS)));
