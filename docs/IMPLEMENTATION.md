@@ -45,7 +45,9 @@ exact form, `ggml_gelu` is the tanh approximation).
 
 ## Streaming over a song
 
-`Transcriber::run` slides 8 s windows over the whole recording (every 4 s), in batches of 4. Three
+`Transcriber::run` slides 8 s windows over the whole recording (every 4 s), in batches: 2 windows on a GPU, 1 on the
+CPU (every batch size gives the same notes; these are the smallest that lose no speed, and the host buffers grow with
+the batch). Three
 things overlap: the host computes the next batch's harmonic CQT while the device runs the current batch, and the host
 accumulates the previous batch's maps (Hann-weighted overlap-add). Consumers read the network's hidden states
 through `TapSink`s as the windows stream past, instead of a whole-song tensor:
@@ -87,4 +89,13 @@ both libraries on one ggml. Two differences matter:
   f32 weights.
 - A failed `ggml_gallocr_reserve` leaves the allocator half-assigned: start over with a fresh allocator.
 - ggml's CPU threads slow down sharply when they share cores with other work; the drums therefore run after the grouper
-  on a CPU, and in parallel only on a GPU.
+  on a CPU, and in parallel only on a GPU, and the default thread count is the physical performance cores
+  (`cpu_threads.cpp`).
+- A network's compute buffer is host memory on the CPU: the pipeline drops the transcriber and the grouper's graph after
+  their last use in a call and builds them again for the next (milliseconds).
+- A GPU backend stages each tensor read in a host buffer as large as the read and keeps it: the taps (100 MB per window
+  batch) are read back in 16 MB pieces.
+- glibc keeps memory that short-lived worker threads freed in per-thread arenas, so a process grew with every call
+  (0.8 -> 2.0 GB over 16 calls); `transcribe()` ends with `malloc_trim`.
+- On the CPU, `ggml_backend_cpu_set_abort_callback` lets `should_cancel` stop a graph at its next node instead of
+  after it (a transcriber window takes seconds there).

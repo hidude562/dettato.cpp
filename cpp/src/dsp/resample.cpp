@@ -1,5 +1,7 @@
 #include "dsp/resample.hpp"
 
+#include "common.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -79,7 +81,7 @@ std::vector<float> resample(const float* x, size_t n, double sr_in, double sr_ou
             y[k] = static_cast<float>(acc * gain);
         }
     };
-    const int nt = threads > 0 ? threads : static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+    const int nt = threads > 0 ? threads : defaultThreadCount();
     std::vector<std::thread> pool;
     const size_t chunk = (m + nt - 1) / nt;
     for (int i = 0; i < nt; i++) {

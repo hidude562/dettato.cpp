@@ -78,6 +78,8 @@ public:
 
     /** Runs the batch. debug keeps the intermediate tensors readable through debug(). */
     void run(const Inputs& in, bool debug = false);
+    /** Frees the graph and its compute buffer; the next run() builds them again. */
+    void release();
     /** After run(): ne [outDim, N, B] (inst logits, raw emb, keep) and ne [d, N, B] (the ln_out output "h"). */
     void heads(std::vector<float>& out) const;
     void hidden(std::vector<float>& out) const;

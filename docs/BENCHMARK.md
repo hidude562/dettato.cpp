@@ -40,6 +40,7 @@ RTX 5060 (8 GB) with an Intel Core Ultra 7 265K, Ubuntu.
 | | total | real-time factor |
 |---|---|---|
 | **dettato.cpp, RTX 5060 (Vulkan, f16)** | **11.7 s** | **20.5x** |
+| dettato.cpp, CPU (Core Ultra 7 265K, 8 threads, f16) | 147-170 s | 1.4-1.6x |
 | Python package, RTX 5060 (CUDA, bf16) | 20.1 s | 11.9x |
 | MuScriptor small via muscriptor.cpp, RTX 5060 (Vulkan) | 28.2 s | 8.5x |
 | MuScriptor medium via muscriptor.cpp, RTX 5060 (Vulkan) | 67.7 s | 3.5x |
@@ -55,13 +56,19 @@ The transcriber network runs at about 119 ms per 8 s window on the RTX 5060 (PyT
 elementwise passes over large f32 tensors (bias adds, residuals, GELU, layout copies) that ggml's Vulkan backend does not
 fuse.
 
-**CPU.** Measured before the one-pass change (the transcriber ran twice): Core Ultra 7 265K, 8 threads, f16 weights,
-226 s (1.06x real time). The one-pass flow removes the grouper's own transcriber pass (about 100 s of that). The Python package on the CPU: about 30 minutes. ggml's CPU backend slows down sharply when its threads
-share cores with other work (the drum graphs measured 8x slower at 20 threads on a busy machine): give it the physical
-performance cores you can spare, not every logical CPU.
+**CPU.** Core Ultra 7 265K on its 8 performance cores (the default thread count), f16 weights: 147-170 s over three
+runs on a machine that was also running other jobs, of which the transcriber 114-135 s, the grouper 25 s and the drums
+11 s. The Python package on the CPU: about 30 minutes. ggml's CPU backend slows down sharply when its threads share
+cores with other work (the drum graphs measured 8x slower at 20 threads on a busy machine), which is why the default
+is the physical performance cores and not every logical CPU.
+
+**Integrated GPU.** On the same machine's Intel Arc graphics (Arrow Lake, Mesa Vulkan driver) the pipeline runs and
+gives the CPU's notes (30 s clip: the same pitched notes, drum hits and tracks), but takes 231 s for the song, slower
+than the CPU's performance cores.
 
 ## Memory
 
-Weights on the device: 74 MB (f16) or 130 MB (f32). On the host, for a 4-min song: the evidence repairer keeps 130 MB of
-the transcriber's hidden states (only around candidate notes; the whole-song tensor the package keeps is 1.55 GB in
-f32), the grouper's store 230 MB (360 MB peak).
+Weights on the device: 74 MB (f16) or 130 MB (f32). Peak resident memory of the process for the 4-min song: 1.4 GB on
+the RTX 5060, 1.5 GB on the CPU (`docs/API.md` has the breakdown). Of that, the evidence repairer keeps 130 MB of the
+transcriber's hidden states (only around candidate notes; the whole-song tensor the package keeps is 1.55 GB in f32)
+and the grouper's store 230 MB (360 MB peak).

@@ -419,12 +419,25 @@ void LaneNet::run(const float* hcqt)
 
 namespace
 {
+    /**
+     * Reads a tensor back in pieces: a GPU backend stages every read in a host buffer as large as the read and keeps
+     * it (ggml-vulkan), and a tap of a batch is ~200 MB.
+     */
+    void read(ggml_tensor* t, void* out)
+    {
+        constexpr size_t PIECE = size_t{16} << 20;
+        const size_t n = ggml_nbytes(t);
+        for (size_t o = 0; o < n; o += PIECE) {
+            ggml_backend_tensor_get(t, static_cast<char*>(out) + o, o, std::min(PIECE, n - o));
+        }
+    }
+
     void get(ggml_tensor* t, std::vector<float>& out)
     {
         DTT_CHECK(t != nullptr, "tensor was not requested");
         out.resize(static_cast<size_t>(ggml_nelements(t)));
         DTT_CHECK(ggml_is_contiguous(t), "%s is not contiguous", t->name);
-        ggml_backend_tensor_get(t, out.data(), 0, ggml_nbytes(t));
+        read(t, out.data());
     }
 } // namespace
 
@@ -452,14 +465,14 @@ void LaneNet::hiddenF16(std::vector<ggml_fp16_t>& out) const
 {
     DTT_CHECK(mHidden != nullptr && mHidden->type == GGML_TYPE_F16, "the hidden tap is not f16");
     out.resize(static_cast<size_t>(ggml_nelements(mHidden)));
-    ggml_backend_tensor_get(mHidden, out.data(), 0, ggml_nbytes(mHidden));
+    read(mHidden, out.data());
 }
 
 void LaneNet::stemF16(std::vector<ggml_fp16_t>& out) const
 {
     DTT_CHECK(mStem != nullptr && mStem->type == GGML_TYPE_F16, "the stem tap is not f16");
     out.resize(static_cast<size_t>(ggml_nelements(mStem)));
-    ggml_backend_tensor_get(mStem, out.data(), 0, ggml_nbytes(mStem));
+    read(mStem, out.data());
 }
 
 std::vector<std::string> LaneNet::debugNames() const

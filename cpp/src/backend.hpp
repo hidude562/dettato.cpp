@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include <ggml-backend.h>
@@ -14,7 +15,7 @@ public:
     /**
      * @param device "cpu", "gpu" (first GPU, else an error), "auto" (first GPU, else the CPU) or a device index into
      *        ggml's device list.
-     * @param n_threads CPU threads; 0 picks the hardware concurrency.
+     * @param n_threads CPU threads; 0 picks defaultThreadCount().
      */
     Backend(const std::string& device, int n_threads);
     ~Backend();
@@ -26,8 +27,14 @@ public:
     int threads() const { return mThreads; }
     const std::string& name() const { return mName; }
 
-    /** Compute a graph; throws on failure. */
+    /** Compute a graph; throws on failure, and Cancelled when the check of setCancel() stopped it. */
     void compute(struct ggml_cgraph* graph) const;
+
+    /**
+     * A check the CPU backend polls at every graph node (a window of the transcriber takes seconds there); empty to
+     * clear it. GPU graphs are short, so their callers poll between them.
+     */
+    void setCancel(std::function<bool()> should_cancel) { mCancel = std::move(should_cancel); }
 
     /** @return The first op of the graph the backend cannot run, as "OP (types)", or empty. */
     std::string firstUnsupportedOp(struct ggml_cgraph* graph) const;
@@ -43,6 +50,7 @@ public:
 private:
     ggml_backend_t mBackend = nullptr;
     mutable int mBcast3 = -1; // matmulBroadcastsDim3(), probed once
+    std::function<bool()> mCancel;
     bool mIsCpu = true;
     int mThreads = 1;
     std::string mName;

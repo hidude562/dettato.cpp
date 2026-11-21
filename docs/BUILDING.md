@@ -63,7 +63,8 @@ faster.
 
 ## Notes per platform
 
-- **Linux**: tested with Vulkan on an NVIDIA RTX 5060 and with the CPU backend. The CPU build targets baseline x86-64;
+- **Linux**: tested with Vulkan on an NVIDIA RTX 5060 and on Intel Arc integrated graphics (Mesa), and with the CPU
+  backend. The CPU build targets baseline x86-64;
   the hot host loops pick AVX2 / FMA / F16C at run time.
 - **macOS**: CI builds the Metal backend on Apple Silicon, but GitHub's runners expose Apple's paravirtual GPU, which has
   no simdgroup operations, so ggml-metal runs no matmul there: the model tests run on the CPU (and check that Auto falls

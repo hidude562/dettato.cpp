@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "common.hpp"
 #include "transcriber/decode.hpp"
 #include "transcriber/hcqt.hpp"
 #include "transcriber/lanenet.hpp"
@@ -147,10 +148,6 @@ public:
 
 private:
     std::vector<TapSink*> mSinks;
-};
-
-struct Cancelled : std::exception {
-    const char* what() const noexcept override { return "cancelled"; }
 };
 
 } // namespace dtt

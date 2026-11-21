@@ -172,7 +172,7 @@ std::vector<float> DrumFeatures::compute(const float* x44, size_t n, int& T, con
                                          int threads) const
 {
     if (threads <= 0) {
-        threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+        threads = defaultThreadCount();
     }
     const double gain = levelGain(x44, n);
     // x44 * gain with a Python float: numpy does it in float32 (the scalar cast to float32)

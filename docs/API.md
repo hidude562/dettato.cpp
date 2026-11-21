@@ -35,8 +35,10 @@ last. Each `Device` has a `name`, a `backend` (`"Metal"`, `"Vulkan"` or `"CPU"`)
 `LoadOptions::device` is an index into that list. Left empty, `load()` picks the first discrete GPU, else the first
 integrated one, else the CPU; when that GPU cannot run one of the networks (or cannot start), it loads on the CPU instead
 and `error_detail` says why. A device chosen by index is never swapped: it loads there or fails with
-`DeviceUnavailable`. `LoadOptions::n_threads` (0 = all logical CPUs) sets the CPU backend's threads and the host
-code's.
+`DeviceUnavailable`. `LoadOptions::n_threads` sets the CPU backend's threads and the host
+code's. 0 = one per physical performance core the process may use (not efficiency cores or hyper-thread siblings, and
+within a container's CPU quota): ggml's threads wait for each other at every graph node, so a slow or shared core holds
+all of them back, and a plugin's host needs cores of its own.
 
 ## Loading
 
@@ -79,7 +81,9 @@ downmix stereo first). It returns a `Transcription`:
 
 - `drums`: run the drum model. It reads the 7.8-20 kHz band, so it only runs when `sample_rate` is at least 40 kHz.
   Below that, there is no drum track.
-- `should_cancel`: polled between windows and between stages; returning true ends the call with `Error::Cancelled`.
+- `should_cancel`: returning true ends the call with `Error::Cancelled`. Polled between windows and between stages,
+  and on the CPU also by the networks at every graph node, so a cancel takes effect within about a second on either
+  device.
 - `on_progress`: `Progress{stage, stage_fraction, overall}`. The stages are `Transcribing` (the tuning check and the
   transcriber), `Repairing`, `Grouping` and `Drums`; `overall` weights them by their typical share of the time on a GPU
   and never goes backwards.
@@ -92,11 +96,18 @@ the reason in `lastErrorMessage()`, also set for `InvalidArgument`).
 One `transcribe()` at a time per `Pipeline`; separate `Pipeline`s are independent. `transcribe()` is blocking (about 12 s
 for a 4-min song on an RTX 5060, a few minutes on a CPU), so a plugin calls it from a worker thread.
 
-Peak resident memory of `dettato_cli` (measured, f16 weights): on the RTX 5060, 1.2 GB for a 3 s clip (the Vulkan
-driver and fixed buffers) and 2.7 GB for a 4-min song; on the CPU, 2.7 GB already for a 3 s clip, because the compute
-buffers of the networks live in host memory there. What grows with the length of the recording is host memory: copies
-of the audio, the transcriber's output maps, the evidence repairer's store of hidden states around candidate notes
-(130 MB for 4 minutes) and the grouper's store (up to 360 MB). Bringing these down is on the list.
+Peak resident memory of `dettato_cli` (measured, f16 weights):
+
+| | 30 s clip | 4-min song |
+|---|---|---|
+| RTX 5060 (Vulkan) | 0.8 GB | 1.4 GB |
+| CPU | 1.0 GB | 1.5 GB |
+
+On the CPU the networks' compute buffers are host memory (about 0.5 GB each for the transcriber and the grouper, more
+for the drums on a long song), so the pipeline frees each one after its stage. What grows with the length of the
+recording: copies of the audio, the transcriber's output maps, the evidence repairer's store of hidden states around
+candidate notes (130 MB for 4 minutes), the grouper's store (up to 360 MB) and the drum model, which reads the whole
+song at once.
 
 ## Environment variables
 

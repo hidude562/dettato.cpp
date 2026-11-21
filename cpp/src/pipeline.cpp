@@ -9,6 +9,10 @@
 #include <string>
 #include <tuple>
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #include "backend.hpp"
 #include "common.hpp"
 #include "drums/drums.hpp"
@@ -53,6 +57,20 @@ namespace
         const std::string n = ggml_backend_reg_name(reg);
         return n == "MTL" ? "Metal" : n;
     }
+
+    /**
+     * Hands freed heap memory back to the system. glibc keeps what short-lived worker threads freed in per-thread arenas,
+     * so without this the process grows with every call (measured: 0.8 -> 2.0 GB over 16 calls; flat with it). Other
+     * allocators need nothing.
+     */
+    struct HeapTrim {
+        ~HeapTrim()
+        {
+#if defined(__GLIBC__)
+            malloc_trim(0);
+#endif
+        }
+    };
 
     constexpr double MIN_END_S = 0.03;        // every pitched note lasts at least 30 ms before grouping
     constexpr double DRUM_MIN_RATE = 40000.0; // the drum model reads the 7.8-20 kHz band
@@ -118,6 +136,20 @@ struct Pipeline::Impl {
     std::unique_ptr<DrumTranscriber> dr;
     Device device;
     std::string error;
+
+    /**
+     * The transcriber. transcribe() drops it after its last use and the next call builds it again: a network's compute
+     * buffer is host memory on the CPU (~0.5 GB here), which the stages after it would otherwise carry.
+     */
+    Transcriber& transcriber()
+    {
+        if (!tr) {
+            // windows per network call: every size gives the same notes. The host buffers grow with it (the compute
+            // buffer on the CPU, the taps read back from a GPU); 2 is as fast as more on a GPU, 1 is the fastest on the CPU
+            tr = std::make_unique<Transcriber>(*mf, *be, be->isCpu() ? 1 : 2, LaneNet::Taps{true, true, false});
+        }
+        return *tr;
+    }
 };
 
 Pipeline::Pipeline(std::unique_ptr<Impl> impl) : mImpl(std::move(impl)) {}
@@ -168,7 +200,7 @@ std::expected<Pipeline, Error> Pipeline::load(const std::filesystem::path& path,
             if (options.should_cancel && options.should_cancel()) {
                 return std::unexpected(Error::Cancelled);
             }
-            impl->tr = std::make_unique<Transcriber>(*impl->mf, *impl->be, 4, LaneNet::Taps{true, true, false});
+            impl->transcriber();
             impl->rep = std::make_unique<EvidenceRepairer>(*impl->mf, *impl->be);
             impl->gr = std::make_unique<Grouper>(*impl->mf, *impl->be);
             // A ggml backend runs one graph at a time, so the drums (started in parallel on a GPU) get their own instance
@@ -224,6 +256,13 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
 {
     Impl& I = *mImpl;
     I.error.clear();
+    const HeapTrim trim_on_return;
+    // on the CPU the networks also poll should_cancel themselves; cleared on return, whatever it captured
+    struct CancelScope {
+        Backend& be;
+        ~CancelScope() { be.setCancel({}); }
+    } cancel_scope{*I.be};
+    I.be->setCancel(o.should_cancel);
     if (sample_rate < 16000.0 || !std::isfinite(sample_rate)) {
         I.error = "sample rate must be at least 16 kHz";
         return std::unexpected(Error::InvalidArgument);
@@ -254,7 +293,7 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
     try {
         Transcription out;
         out.seconds = mono.size() / sample_rate;
-        const std::vector<float> x16 = resample(mono.data(), mono.size(), sample_rate, 16000.0);
+        const std::vector<float> x16 = resample(mono.data(), mono.size(), sample_rate, 16000.0, I.be->threads());
         lap("resample to 16 kHz");
 
         // the drums only need the audio: on a GPU they start now, alongside the transcriber
@@ -267,7 +306,7 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         auto run_drums = [&I, mono, sample_rate] {
             const auto t0 = std::chrono::steady_clock::now();
             DrumResult r;
-            const std::vector<float> x44 = resample(mono.data(), mono.size(), sample_rate, 44100.0);
+            const std::vector<float> x44 = resample(mono.data(), mono.size(), sample_rate, 44100.0, I.be->threads());
             r.hits = I.dr->transcribe(x44.data(), x44.size(), &r.info);
             r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             return r;
@@ -304,12 +343,13 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         ro.sub_maps = &maps2;
         ro.sub_step = 64000;
         ro.progress = [&](float f) { return report(Stage::Transcribing, f); };
-        const Maps maps = I.tr->run(y.data(), y.size(), ro);
+        Transcriber& tr = I.transcriber();
+        const Maps maps = tr.run(y.data(), y.size(), ro);
         lap("transcriber (one pass)");
         start_drums();
 
         // 3. the evidence repairer (notes on y's time axis)
-        const auto tnotes = I.tr->notes(maps);
+        const auto tnotes = tr.notes(maps);
         if (!report(Stage::Repairing, 0.0f)) {
             throw Cancelled();
         }
@@ -332,13 +372,17 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         }
         std::vector<GroupTrack> tracks;
         if (!notes3.empty()) {
-            const GroupFeatures f = I.gr->featuresFromStore(y.data(), y.size(), notes3, *gr_sink, maps2, *I.tr);
+            const GroupFeatures f = I.gr->featuresFromStore(y.data(), y.size(), notes3, *gr_sink, maps2, tr);
             gr_sink.reset();
+            I.tr.reset(); // its last use
+            HeapTrim{};   // and the buffers of the pass
             lap("grouper features (store)");
             const GroupPredictions P = I.gr->predict(y.data(), y.size(), f);
             tracks = I.gr->tracks(f, P, rt.r);
+            I.gr->release();
             lap("grouper network + decode");
         }
+        I.tr.reset();
         out.tuning_cents = rt.delta;
         appendTracks(out, tracks);
 

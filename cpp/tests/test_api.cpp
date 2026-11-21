@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <thread>
 #include <vector>
@@ -166,6 +167,22 @@ TEST_CASE("transcribe() checks its arguments and can be cancelled", "[model]")
     dtt::TranscribeOptions o;
     o.should_cancel = [] { return true; };
     CHECK(p.transcribe(testSignal(44100.0), 44100.0, o).error() == dtt::Error::Cancelled);
+
+    // cancelled in the middle of the transcriber: on the CPU the network itself stops, not only the gap between windows
+    std::optional<std::chrono::steady_clock::time_point> asked;
+    o.on_progress = [&](const dtt::Progress& pr) {
+        if (!asked && pr.stage == dtt::Stage::Transcribing && pr.stage_fraction > 0.0f) {
+            asked = std::chrono::steady_clock::now();
+        }
+    };
+    o.should_cancel = [&] { return asked.has_value(); };
+    const auto x40 = testSignal(16000.0, 5);
+    const auto mid = p.transcribe(x40, 16000.0, o);
+    REQUIRE(asked.has_value());
+    const double waited = std::chrono::duration<double>(std::chrono::steady_clock::now() - *asked).count();
+    std::printf("cancel: returned %.2f s after should_cancel turned true\n", waited);
+    CHECK(mid.error() == dtt::Error::Cancelled);
+    CHECK(waited < 10.0);
 
     const auto silent = p.transcribe(std::vector<float>(16000 * 3, 0.0f), 16000.0); // and it still works after a cancel
     REQUIRE(silent.has_value());

@@ -363,6 +363,11 @@ void NoteNet::fillSlot(Inputs& in, int b, const GroupFront& fr, const float* not
     }
 }
 
+void NoteNet::release()
+{
+    mG.reset();
+}
+
 void NoteNet::run(const Inputs& in, bool debug)
 {
     build(in.B, in.N, in.Tf, debug);

@@ -52,7 +52,7 @@ struct LoadOptions {
      * when that GPU cannot run the networks (error_detail then says why).
      */
     std::optional<size_t> device;
-    /** CPU threads; 0 = all logical CPUs. */
+    /** CPU threads; 0 = one per physical performance core the process may use. */
     int n_threads = 0;
     /** Polled during loading; returning true makes load() return Error::Cancelled. */
     std::function<bool()> should_cancel;

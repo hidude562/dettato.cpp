@@ -7,8 +7,10 @@
 #include <complex>
 #include <numbers>
 #include <random>
+#include <thread>
 #include <vector>
 
+#include "common.hpp"
 #include "dsp/resample.hpp"
 #include "dsp/stft.hpp"
 
@@ -117,4 +119,11 @@ TEST_CASE("PowerStft matches a direct DFT (torch.stft, center=True, zero padding
         const double want = out[i];
         REQUIRE_THAT(static_cast<double>(mag[i]) * mag[i], Catch::Matchers::WithinRel(want, 1e-4) || Catch::Matchers::WithinAbs(want, 1e-6));
     }
+}
+
+TEST_CASE("the default thread count is between 1 and the logical CPUs", "[pure][threads]")
+{
+    const int n = dtt::defaultThreadCount();
+    CHECK(n >= 1);
+    CHECK(n <= static_cast<int>(std::max(1u, std::thread::hardware_concurrency())));
 }

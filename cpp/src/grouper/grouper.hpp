@@ -115,6 +115,8 @@ public:
     mutable Debug* debug = nullptr;
 
     const GroupFront& front() const { return *mFront; }
+    /** Frees the network's compute buffer (it is rebuilt by the next predict()). */
+    void release();
     const NoteNet& net() const { return *mNet; }
     NoteNet& net() { return *mNet; }
     int instruments() const { return static_cast<int>(mNames.size()); }

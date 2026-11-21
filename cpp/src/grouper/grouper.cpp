@@ -375,6 +375,11 @@ Grouper::Grouper(const ModelFile& mf, const Backend& be) : mBe(be)
 
 Grouper::~Grouper() = default;
 
+void Grouper::release()
+{
+    mNet->release();
+}
+
 // ------------------------------------------------------------------------------------------------------- features
 namespace
 {

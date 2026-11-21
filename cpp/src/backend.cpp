@@ -23,7 +23,7 @@ namespace
 
 Backend::Backend(const std::string& device, int n_threads)
 {
-    mThreads = n_threads > 0 ? n_threads : std::max(1u, std::thread::hardware_concurrency());
+    mThreads = n_threads > 0 ? n_threads : defaultThreadCount();
     ggml_backend_dev_t dev = nullptr;
     const bool is_index = !device.empty() && std::all_of(device.begin(), device.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
 
@@ -54,6 +54,8 @@ Backend::Backend(const std::string& device, int n_threads)
         mBackend = ggml_backend_cpu_init();
         DTT_CHECK(mBackend != nullptr, "could not initialise the CPU backend");
         ggml_backend_cpu_set_n_threads(mBackend, mThreads);
+        ggml_backend_cpu_set_abort_callback(
+            mBackend, [](void* self) { const auto& f = static_cast<Backend*>(self)->mCancel; return f && f(); }, this);
         mIsCpu = true;
         mName = format("CPU (%d threads)", mThreads);
     }
@@ -69,6 +71,9 @@ Backend::~Backend()
 void Backend::compute(ggml_cgraph* graph) const
 {
     const ggml_status st = ggml_backend_graph_compute(mBackend, graph);
+    if (st == GGML_STATUS_ABORTED) {
+        throw Cancelled();
+    }
     DTT_CHECK(st == GGML_STATUS_SUCCESS, "graph compute failed (status %d)", static_cast<int>(st));
 }
 

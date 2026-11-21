@@ -1,5 +1,6 @@
 #include "transcriber/transcriber.hpp"
 
+#include <cstdio>
 #include <algorithm>
 #include <cmath>
 #include <future>
@@ -133,21 +134,22 @@ Maps Transcriber::run(const float* audio, size_t n, const RunOptions& o)
     };
 
     // Three stages overlap: the CPU front end of batch k+1 (one thread per window), the network on batch k, and the
-    // accumulation of batch k-1 (maps, tap sink, final frames — in order). Two slots alternate between batches.
-    // A slot's xin is written by prepare(k+1) while consume(k-1) still reads the same slot's outputs: the batch index
-    // is passed by value, never stored in the slot.
-    struct Slot {
-        std::vector<float> xin, logits, hidden, stem;
+    // accumulation of batch k-1 (maps, tap sink, final frames — in order). The input alternates between two buffers
+    // (prepare(k+1) fills one while the network reads the other). The outputs need one set: batch k is read back only
+    // after consume(k-1) has finished. The batch index is passed by value, never stored.
+    struct Outputs {
+        std::vector<float> logits, hidden, stem;
         std::vector<ggml_fp16_t> hidden16, stem16; // when the taps come back as f16 (converted in consume, off the critical path)
     };
     const bool f16 = mNet->tapsF16();
-    Slot slots[2];
+    std::vector<float> xins[2];
+    Outputs s;
     auto first = [&](size_t batch) { return batch * B; };
     auto count = [&](size_t batch) { return static_cast<int>(std::min<size_t>(B, nwin - batch * B)); };
-    auto prepare = [&](size_t batch, Slot& s) {
+    auto prepare = [&](size_t batch, std::vector<float>& xin) {
         const size_t bi = first(batch);
         const int nb = count(batch);
-        s.xin.resize(win_in * B);
+        xin.resize(win_in * B);
         std::vector<std::thread> pool;
         for (int k = 0; k < B; k++) {
             pool.emplace_back([&, k] {
@@ -160,14 +162,14 @@ Maps Transcriber::run(const float* audio, size_t n, const RunOptions& o)
                         xw[i] = (j >= 0 && j < static_cast<long>(n)) ? audio[j] : 0.0f;
                     }
                 }
-                mHcqt.compute(xw.data(), W, s.xin.data() + win_in * k);
+                mHcqt.compute(xw.data(), W, xin.data() + win_in * k);
             });
         }
         for (auto& t : pool) {
             t.join();
         }
     };
-    auto consume = [&](size_t batch, Slot& s) {
+    auto consume = [&](size_t batch) {
         const size_t bi = first(batch);
         const int nb = count(batch);
         for (int k = 0; k < nb; k++) {
@@ -237,18 +239,17 @@ Maps Transcriber::run(const float* audio, size_t n, const RunOptions& o)
         }
     };
     if (nbatch > 0) {
-        prep = std::async(std::launch::async, prepare, 0, std::ref(slots[0]));
+        prep = std::async(std::launch::async, prepare, 0, std::ref(xins[0]));
     }
     try {
         for (size_t k = 0; k < nbatch; k++) {
-            Slot& s = slots[k % 2];
             prep.get();
             if (k + 1 < nbatch) {
-                prep = std::async(std::launch::async, prepare, k + 1, std::ref(slots[(k + 1) % 2]));
+                prep = std::async(std::launch::async, prepare, k + 1, std::ref(xins[(k + 1) % 2]));
             }
-            mNet->run(s.xin.data());
+            mNet->run(xins[k % 2].data());
             if (cons.valid()) {
-                cons.get(); // batch k-1 accumulated: slot k % 2's outputs (batch k-2) are free to overwrite
+                cons.get(); // batch k-1 accumulated: the outputs are free to overwrite
             }
             mNet->logits(s.logits);
             if (want_h) {
@@ -257,7 +258,7 @@ Maps Transcriber::run(const float* audio, size_t n, const RunOptions& o)
             if (want_s) {
                 f16 ? mNet->stemF16(s.stem16) : mNet->stem(s.stem);
             }
-            cons = std::async(std::launch::async, consume, k, std::ref(s));
+            cons = std::async(std::launch::async, consume, k);
             if (progress && !progress(static_cast<float>(std::min(first(k) + B, nwin)) / static_cast<float>(nwin))) {
                 throw Cancelled();
             }
