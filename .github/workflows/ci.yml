@@ -120,3 +120,63 @@ jobs:
         run: cmake --build build --parallel 4
       - name: Tests without weights
         run: ctest --test-dir build --output-on-failure
+
+  windows-vulkan:
+    name: windows-msvc, Vulkan build (no GPU or Vulkan loader on the runner; with the model tests)
+    runs-on: windows-2022
+    env:
+      VULKAN_SDK_VERSION: 1.4.363.0
+      VULKAN_SDK_SHA256: 94A82D378F7A5E3E54C9DB7D2FB7016AF136E14AC0A18DBF0F2F67A36352D141
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the Vulkan SDK
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
+          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Install the Vulkan SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\vulkansdk.exe"
+          $url = "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_SDK_VERSION.exe"
+          Invoke-WebRequest -Uri $url -OutFile $exe -UserAgent "Mozilla/5.0"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          if ($hash -ne $env:VULKAN_SDK_SHA256) { throw "Vulkan SDK installer sha256 is $hash" }
+          $p = Start-Process -Wait -PassThru -FilePath $exe -ArgumentList "--root", "C:\VulkanSDK\$env:VULKAN_SDK_VERSION", "--accept-licenses", "--default-answer", "--confirm-command", "install"
+          if ($p.ExitCode -ne 0) { throw "the Vulkan SDK installer exited with $($p.ExitCode)" }
+
+      - name: Configure and build (Ninja, from the Visual Studio environment so ggml's shader generator finds cl)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          set VULKAN_SDK=C:\VulkanSDK\%VULKAN_SDK_VERSION%
+          cmake -S cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=ON || exit /b 1
+          cmake --build build --parallel 4 || exit /b 1
+
+      - name: Is there a Vulkan loader on this machine?
+        shell: cmd
+        run: where vulkan-1.dll & exit /b 0
+
+      - name: Devices
+        run: ./build/tools/dettato_cli --list-devices
+
+      - name: Tests without weights
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Cache the GGUF
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: dettato-gguf-${{ hashFiles('py/fetch.py') }}
+
+      - name: Fetch the GGUF
+        run: python py/fetch.py models
+
+      - name: Tests with the model (Auto must end on the CPU)
+        env:
+          DETTATO_TEST_MODEL: ${{ github.workspace }}/models/dettato-f16.gguf
+        run: ./build/tests/dettato_tests "[model]" --durations yes

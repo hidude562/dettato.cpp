@@ -44,6 +44,15 @@ public:
      */
     bool matmulBroadcastsDim3() const;
 
+    /**
+     * The number of devices in ggml's registry (every backend ggml was built with); index them with
+     * ggml_backend_dev_get. 0 where the registry must not be touched: creating it calls into every backend, and on a
+     * Windows machine without a Vulkan loader a ggml with the Vulkan backend then faults, because hosts delay-load
+     * vulkan-1.dll so that they still start there (muscriptor.cpp does; so does this project's own ggml). The CPU is
+     * not in question: it is never taken from the registry.
+     */
+    static size_t deviceCount();
+
     /** Lists ggml's devices, one per line, with their indices. */
     static std::string listDevices();
 

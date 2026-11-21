@@ -84,7 +84,7 @@ namespace
     std::vector<size_t> gpuIndices()
     {
         std::vector<size_t> idx;
-        for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+        for (size_t i = 0; i < Backend::deviceCount(); i++) {
             const auto t = ggml_backend_dev_type(ggml_backend_dev_get(i));
             if (t == GGML_BACKEND_DEVICE_TYPE_GPU || t == GGML_BACKEND_DEVICE_TYPE_IGPU) {
                 idx.push_back(i);

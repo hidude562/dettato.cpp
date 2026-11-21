@@ -23,6 +23,7 @@ option(DETTATO_NATIVE "Optimize ggml for the build machine's CPU (never for a sh
 set(DETTATO_GGML_COMMIT 417a024b4fb6bc3116d41af7c067166a039bdf12)   # v1.0.0
 
 if(NOT TARGET ggml)
+    set(DETTATO_OWN_GGML ON)
     include(FetchContent)
     set(BUILD_SHARED_LIBS OFF)
     set(GGML_STATIC       ON  CACHE BOOL "" FORCE)
@@ -65,6 +66,23 @@ target_include_directories(dettato_ggml
     PRIVATE src third_party/pocketfft)
 target_link_libraries(dettato_ggml PUBLIC ggml)
 target_compile_features(dettato_ggml PUBLIC cxx_std_23)
+
+# The GPU backend of the ggml in use (the host's or the fetched one) that needs care on Windows.
+if(TARGET ggml-vulkan)
+    target_compile_definitions(dettato_ggml PRIVATE DETTATO_HAS_VULKAN)
+
+    # With this project's own ggml: delay-load vulkan-1.dll, so a binary still starts on a machine without Vulkan
+    # (Backend::deviceCount checks for the loader before the first Vulkan call). INTERFACE, so the flags reach the
+    # executable. A host that provides ggml decides this itself; muscriptor.cpp does the same. MinGW has no delay-load.
+    if(DETTATO_OWN_GGML AND WIN32 AND NOT MINGW)
+        target_link_libraries(dettato_ggml INTERFACE delayimp)
+        if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+            target_link_options(dettato_ggml INTERFACE /DELAYLOAD:vulkan-1.dll)
+        else()
+            target_link_options(dettato_ggml INTERFACE -Wl,/DELAYLOAD:vulkan-1.dll)
+        endif()
+    endif()
+endif()
 if(MSVC)
     target_compile_options(dettato_ggml PRIVATE /W4 /utf-8 /bigobj)
     target_compile_definitions(dettato_ggml PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)

@@ -9,6 +9,16 @@
 
 #include "common.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace dtt
 {
 
@@ -21,6 +31,35 @@ namespace
     }
 } // namespace
 
+size_t Backend::deviceCount()
+{
+    static const size_t count = []() -> size_t {
+#if defined(_WIN32) && defined(DETTATO_HAS_VULKAN)
+        if (LoadLibraryW(L"vulkan-1.dll") == nullptr) {
+            return 0; // no Vulkan loader: the first Vulkan call would fault (see the header)
+        }
+        // Implicit Vulkan layers, which screen recorders and overlays install system-wide, can crash the driver when
+        // ggml creates its device (found by muscriptor.cpp): keep them out of the instance created here. The loader
+        // reads the variable in vkCreateInstance only; a value that is already set is left alone.
+        const wchar_t* layers = L"VK_LOADER_LAYERS_DISABLE";
+        const bool set = GetEnvironmentVariableW(layers, nullptr, 0) == 0 && SetEnvironmentVariableW(layers, L"~implicit~") != 0;
+#endif
+        size_t n = 0;
+        try {
+            n = ggml_backend_dev_count();
+        } catch (...) {
+            n = 0; // a backend that throws while it lists its devices (a broken driver) leaves the CPU
+        }
+#if defined(_WIN32) && defined(DETTATO_HAS_VULKAN)
+        if (set) {
+            SetEnvironmentVariableW(layers, nullptr);
+        }
+#endif
+        return n;
+    }();
+    return count;
+}
+
 Backend::Backend(const std::string& device, int n_threads)
 {
     mThreads = n_threads > 0 ? n_threads : defaultThreadCount();
@@ -29,12 +68,12 @@ Backend::Backend(const std::string& device, int n_threads)
 
     if (is_index) {
         const size_t i = std::stoul(device);
-        DTT_CHECK(i < ggml_backend_dev_count(), "device index %zu out of range (%zu devices)", i, ggml_backend_dev_count());
+        DTT_CHECK(i < deviceCount(), "device index %zu out of range (%zu devices)", i, deviceCount());
         dev = ggml_backend_dev_get(i);
     } else if (device == "gpu" || device == "auto") {
         // Discrete before integrated.
         for (auto want : {GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU}) {
-            for (size_t i = 0; i < ggml_backend_dev_count() && dev == nullptr; i++) {
+            for (size_t i = 0; i < deviceCount() && dev == nullptr; i++) {
                 if (ggml_backend_dev_type(ggml_backend_dev_get(i)) == want) {
                     dev = ggml_backend_dev_get(i);
                 }
@@ -114,7 +153,7 @@ bool Backend::matmulBroadcastsDim3() const
 std::string Backend::listDevices()
 {
     std::string s;
-    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+    for (size_t i = 0; i < deviceCount(); i++) {
         ggml_backend_dev_t d = ggml_backend_dev_get(i);
         size_t free = 0, total = 0;
         ggml_backend_dev_memory(d, &free, &total);
