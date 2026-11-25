@@ -1,7 +1,11 @@
-//   dettato_cli MODEL.gguf IN.wav [IN2.wav ...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums] [--list-devices]
+//   dettato_cli MODEL.gguf IN.wav [IN2.wav ...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums] [--only NAME[,NAME...]] [--list-devices]
+//
+// --only keeps the tracks whose instrument name contains one of the names (case-insensitive), e.g. --only drums.
 //
 // Writes OUTDIR/<name>.mid and OUTDIR/<name>.json (tracks, note counts, tuning, drum model, timing), like the Python CLI.
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -28,8 +32,15 @@ static std::string jsonEscape(const std::string& s)
     return o;
 }
 
+static std::string lower(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
 int main(int argc, char** argv)
 {
+    std::vector<std::string> only; // lower-case name fragments; empty keeps every track
     std::vector<std::string> inputs;
     std::string model, out_dir = ".", device = "auto";
     int threads = 0;
@@ -44,6 +55,31 @@ int main(int argc, char** argv)
             threads = std::stoi(argv[++i]);
         } else if (a == "--no-drums") {
             drums = false;
+        } else if (a == "--only") {
+            if (i + 1 >= argc || std::string(argv[i + 1]).starts_with("--")) {
+                std::fprintf(stderr, "--only requires a comma-separated list of instrument names\n");
+                return 2;
+            }
+            const size_t previous = only.size();
+            std::string list = lower(argv[++i]);
+            for (size_t b = 0; b <= list.size();) {
+                const size_t e = std::min(list.find(',', b), list.size());
+                size_t x = b, y = e;
+                while (x < y && std::isspace(static_cast<unsigned char>(list[x]))) {
+                    x++;
+                }
+                while (y > x && std::isspace(static_cast<unsigned char>(list[y - 1]))) {
+                    y--;
+                }
+                if (y > x) {
+                    only.push_back(list.substr(x, y - x));
+                }
+                b = e + 1;
+            }
+            if (only.size() == previous) {
+                std::fprintf(stderr, "--only requires at least one nonempty instrument name\n");
+                return 2;
+            }
         } else if (a == "--list-devices") {
             const auto d = dtt::availableDevices();
             for (size_t k = 0; k < d.size(); k++) {
@@ -57,7 +93,7 @@ int main(int argc, char** argv)
         }
     }
     if (model.empty() || inputs.empty()) {
-        std::fprintf(stderr, "usage: %s MODEL.gguf IN.wav [...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s MODEL.gguf IN.wav [...] -o OUTDIR [--device auto|cpu|N] [--threads N] [--no-drums] [--only NAME[,NAME...]]\n", argv[0]);
         return 2;
     }
     dtt::LoadOptions lo;
@@ -81,7 +117,10 @@ int main(int argc, char** argv)
         try {
             const dtt::Audio a = dtt::readWav(in);
             dtt::TranscribeOptions to;
-            to.drums = drums;
+            // the drum model is not needed when no requested name can match the drum track
+            to.drums = drums && (only.empty() || std::any_of(only.begin(), only.end(), [](const std::string& o) {
+                                     return std::string("drums").find(o) != std::string::npos;
+                                 }));
             const auto t = std::chrono::steady_clock::now();
             auto r = pipe->transcribe(a.samples, a.rate, to);
             const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
@@ -99,6 +138,27 @@ int main(int argc, char** argv)
             for (const auto& n : r->notes) {
                 mt[n.track].notes.push_back({n.onset, n.offset, n.pitch, n.velocity});
             }
+            if (!only.empty()) {
+                std::string found;
+                std::vector<dtt::MidiTrack> kept;
+                for (auto& tr : mt) {
+                    found += (found.empty() ? "" : ", ") + tr.name;
+                    const std::string name = lower(tr.name);
+                    if (std::any_of(only.begin(), only.end(), [&](const std::string& o) { return name.find(o) != std::string::npos; })) {
+                        kept.push_back(std::move(tr));
+                    }
+                }
+                if (kept.empty()) {
+                    std::fprintf(stderr, "%s: no track matches --only; found: %s\n", in.c_str(), found.empty() ? "(none)" : found.c_str());
+                    failures++;
+                    continue;
+                }
+                mt = std::move(kept);
+            }
+            size_t n_notes = 0;
+            for (const auto& tr : mt) {
+                n_notes += tr.notes.size();
+            }
             const std::string stem = fs::path(in).stem().string();
             dtt::saveMidi((fs::path(out_dir) / (stem + ".mid")).string(), mt);
             std::ofstream js(fs::path(out_dir) / (stem + ".json"));
@@ -112,7 +172,7 @@ int main(int argc, char** argv)
             }
             js << "]}\n";
             std::fprintf(stderr, "%s: %.1f s audio in %.1f s (%.1fx real time), %zu tracks, %zu notes\n", in.c_str(), r->seconds, secs,
-                         r->seconds / secs, r->tracks.size(), r->notes.size());
+                         r->seconds / secs, mt.size(), n_notes);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "%s: %s\n", in.c_str(), e.what());
             failures++;
