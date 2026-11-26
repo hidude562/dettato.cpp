@@ -69,10 +69,10 @@ faster.
 - **macOS**: CI builds the Metal backend on Apple Silicon, but GitHub's runners expose Apple's paravirtual GPU, which has
   no simdgroup operations, so ggml-metal runs no matmul there: the model tests run on the CPU (and check that Auto falls
   back to it). The first run on an Apple Silicon Mac (by Oli Larkin) found that the drum model's attention uses
-  16-channel heads, below the smallest head size ggml-metal's flash attention supports (32); the drum graphs are checked
-  only when they run, so with drums (audio at 40 kHz or more) the transcription fails on Metal rather than falling back.
-  Pull request #1 pads those heads. The transcriber uses ggml's flash attention where the backend supports it and the
-  explicit softmax otherwise.
+  16-channel heads, below the smallest head size ggml-metal's flash attention supports (32), so with drums (audio at
+  40 kHz or more) a transcription failed on Metal. His fix (pull request #1) pads those heads to 32 on every backend; the
+  output on the CPU and on Vulkan is unchanged. The transcriber uses ggml's flash attention where the backend supports it
+  and the explicit softmax otherwise.
 - **Windows**: CI builds with MSVC, CPU only and with the Vulkan backend (Vulkan SDK 1.4.363, Ninja, from a Visual
   Studio developer prompt so that ggml's shader generator finds `cl`), and runs the tests on the CPU; Vulkan has not
   run on a Windows GPU yet. With its own ggml, dettato.cpp delay-loads `vulkan-1.dll` and checks for it before the first
