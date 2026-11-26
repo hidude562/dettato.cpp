@@ -17,7 +17,7 @@ Python package scores 67.51. That difference is inside the error bars, so I woul
 The output is close to the package, but it is not the same, because I changed a few parts on purpose:
 
 - The Python package runs the transcriber twice. It runs it on the recording for the notes, and then on the recording
-  tuned to A440 for the grouper. dettato.cpp checks the tuning first, so the transcriber only does one pass, on the tuned
+  tuned to A440 for the grouper. dettato.cpp checks the tuning first, so the transcriber only makes one pass, on the tuned
   audio. For a song that is in tune this is the same. For a song that is off A440 the notes get better. For instance, the
   frame F1 on Dagstuhl ChoirSet goes from 79.2 to 81.2.
 - The transcriber reads the song in windows of 8 seconds. The package moves the window by 2 seconds each time and
@@ -116,7 +116,7 @@ add_subdirectory(third_party/dettato.cpp/cpp)
 target_link_libraries(my_app PRIVATE dettato_ggml)
 ```
 
-If the host already builds ggml (NeuralNote does for muscriptor.cpp), add ggml first. Then dettato.cpp links to that ggml
+If the host already builds ggml (NeuralNote builds it for muscriptor.cpp), add ggml first. Then dettato.cpp links to that ggml
 instead of fetching a second copy, since a binary can only have one ggml. It works with ggml v1.0.0 and with the older ggml
 that muscriptor.cpp uses, so NeuralNote can build both on one ggml.
 
