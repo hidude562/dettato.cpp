@@ -63,8 +63,18 @@ namespace
             ggml_tensor* t = ggml_view_3d(ctx, qkv, D, heads, N, D * es, qkv->nb[1], i * da * es); // [D, H, N]
             return ggml_permute(ctx, t, 0, 2, 1, 3);                                              // [D, N, H]
         };
-        ggml_tensor* o = ggml_flash_attn_ext(ctx, part(0), part(1), part(2), nullptr, 1.0f / std::sqrt(static_cast<float>(D)), 0.0f, 0.0f);
+        // Metal's flash attention kernels start at a head size of 32: zero-pad smaller heads (the scores q.k are
+        // unchanged and the padded output channels are zero) and cut the padding off the result.
+        const int64_t Dk = std::max<int64_t>(D, 32);
+        auto padded = [&](int i) {
+            ggml_tensor* t = part(i);
+            return Dk == D ? t : ggml_pad(ctx, ggml_cont(ctx, t), static_cast<int>(Dk - D), 0, 0, 0);
+        };
+        ggml_tensor* o = ggml_flash_attn_ext(ctx, padded(0), padded(1), padded(2), nullptr, 1.0f / std::sqrt(static_cast<float>(D)), 0.0f, 0.0f);
         accF32(o);
+        if (Dk != D) {
+            o = ggml_cont(ctx, ggml_view_3d(ctx, o, D, heads, N, o->nb[1], o->nb[2], 0)); // [Dk, H, N] -> [D, H, N]
+        }
         return ggml_reshape_2d(ctx, o, da, N); // [D, H, N] -> head-major channels, as torch's transpose + reshape
     }
 
