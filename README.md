@@ -99,6 +99,16 @@ build/tools/dettato_cli models/dettato-f16.gguf song.wav -o out/
 
 It writes `out/song.mid` and `out/song.json`. It only reads WAV, so I would convert other formats with ffmpeg first.
 
+### Filter CLI output by instrument
+
+Use `--only drums` to write only drum tracks, or `--only bass,piano` to keep
+tracks whose instrument names contain either fragment (case-insensitive).
+Filtering applies to MIDI output, JSON track entries, and the printed output
+track/note counts. It does not skip pitched-instrument inference. Drum inference
+is skipped when no requested fragment can match "drums"; `--no-drums` still
+takes precedence. An empty filter is a usage error. If no tracks match, that
+input fails without writing output and reports the available track names.
+
 ## Using It From CMake
 
 ```cmake
