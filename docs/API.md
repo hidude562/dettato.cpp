@@ -83,12 +83,14 @@ signal gives an empty transcription, not an error. It returns a `Transcription`:
 
 - `drums`: run the drum model. It reads the 7.8-20 kHz band, so it only runs when `sample_rate` is at least 40 kHz.
   Below that, there is no drum track.
-- `should_cancel`: returning true ends the call with `Error::Cancelled`. Polled between the stages and before every
-  network call, and on the CPU also inside the networks at every graph node, so keep it cheap (reading a flag). The
-  drums run on a second thread on a GPU and poll it too, but it is never called from two threads at once. A cancel
-  during the transcriber, which is most of a run, returns within a fraction of a second (measured 0.03-0.3 s); host
-  loops between the network calls (resampling, the decodes) are not interrupted.
-- `on_progress`: `Progress{stage, stage_fraction, overall}`. The stages are `Transcribing` (the tuning check and the
+- `should_cancel`: returning true ends the call with `Error::Cancelled`. Polled between the stages, before every
+  network call, after each batch of windows, in the drum model's host steps, and on the CPU also inside the networks at
+  every graph node, so keep it cheap (reading a flag). The drums run on a second thread on a GPU and poll it too, but it
+  is never called from two threads at once. A cancel returns once the network call in flight on each thread has
+  finished: measured 0.0-0.1 s on the CPU and on an RTX 5060, in every stage. On a slower or busy GPU one call can take
+  seconds.
+- `on_progress`: `Progress{stage, stage_fraction, overall}`, reported per batch of windows in the transcriber and the
+  grouper. The stages are `Transcribing` (the tuning check and the
   transcriber), `Repairing`, `Grouping` and `Drums`; `overall` weights them by their typical share of the time on a GPU
   and never goes backwards.
 

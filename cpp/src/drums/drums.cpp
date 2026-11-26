@@ -20,6 +20,7 @@ DrumTranscriber::DrumTranscriber(const ModelFile& mf, const Backend& be)
     mSampleRate = static_cast<int>(mf.u32("dr.sample_rate"));
     mMinSourceRate = static_cast<int>(mf.u32("dr.min_source_rate"));
     mThreads = be.threads();
+    mBe = &be;
     mDecoder = std::make_unique<DrumDecoder>(mf);
 }
 
@@ -58,6 +59,7 @@ std::vector<DrumHit> DrumTranscriber::transcribe(const float* audio44k, size_t n
     }
     int T = 0;
     const auto feats = mFeatures->compute(audio44k, n, T, x16, nullptr, mThreads);
+    mBe->throwIfCancelled();
     const auto t1 = Clock::now();
     if (timing != nullptr) {
         timing->features += std::chrono::duration<double, std::milli>(t1 - t0).count();

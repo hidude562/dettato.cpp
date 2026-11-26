@@ -337,8 +337,11 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         const bool want_drums = o.drums && sample_rate >= DRUM_MIN_RATE;
         auto run_drums = [&I, mono, sample_rate] {
             const auto t0 = std::chrono::steady_clock::now();
+            const Backend& be = I.be_drums ? *I.be_drums : *I.be; // its cancel check: a cancel waits for this thread
             DrumResult r;
+            be.throwIfCancelled();
             const std::vector<float> x44 = resample(mono.data(), mono.size(), sample_rate, 44100.0, I.be->threads());
+            be.throwIfCancelled();
             r.hits = I.dr->transcribe(x44.data(), x44.size(), &r.info);
             r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             return r;
@@ -404,12 +407,15 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
         }
         std::vector<GroupTrack> tracks;
         if (!notes3.empty()) {
-            const GroupFeatures f = I.gr->featuresFromStore(y.data(), y.size(), notes3, *gr_sink, maps2, tr);
+            // the grouper's two halves take about the same time: its features (recomputing the windows the store lacks)
+            // and its network + decode
+            const GroupFeatures f = I.gr->featuresFromStore(y.data(), y.size(), notes3, *gr_sink, maps2, tr,
+                                                            [&](float g) { return report(Stage::Grouping, 0.5f * g); });
             gr_sink.reset();
             I.tr.reset(); // its last use
             HeapTrim{};   // and the buffers of the pass
             lap("grouper features (store)");
-            const GroupPredictions P = I.gr->predict(y.data(), y.size(), f);
+            const GroupPredictions P = I.gr->predict(y.data(), y.size(), f, [&](float g) { return report(Stage::Grouping, 0.5f + 0.5f * g); });
             tracks = I.gr->tracks(f, P, rt.r);
             I.gr->release();
             lap("grouper network + decode");

@@ -29,8 +29,9 @@ changes. I also scored the tracks against the true instruments of the benchmark 
 package ([docs/BENCHMARK.md](docs/BENCHMARK.md)).
 
 I ran it on Linux with Vulkan (an RTX 5060 and Intel integrated graphics) and on the CPU. CI builds and tests it on macOS
-and on Windows, but only on the CPU, since the CI machines have no GPU that ggml could use. This means Metal has never
-run on a Mac GPU, and Vulkan has never run on Windows.
+and on Windows, but only on the CPU, since the CI machines have no GPU that ggml could use. Oli Larkin ran it on an
+Apple Silicon Mac, and found that the drum model could not run on Metal, so a song with drums failed there. His pull
+request #1 fixes it. Vulkan has not run on a Windows GPU yet.
 
 ## Speed
 

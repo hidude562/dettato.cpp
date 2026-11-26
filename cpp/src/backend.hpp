@@ -5,6 +5,8 @@
 
 #include <ggml-backend.h>
 
+#include "common.hpp"
+
 namespace dtt
 {
 
@@ -35,6 +37,13 @@ public:
      * transcriber takes seconds there; a GPU graph a fraction of one); empty to clear it.
      */
     void setCancel(std::function<bool()> should_cancel) { mCancel = std::move(should_cancel); }
+    /** Throws Cancelled when the check of setCancel() says stop; for host work between graphs. */
+    void throwIfCancelled() const
+    {
+        if (mCancel && mCancel()) {
+            throw Cancelled();
+        }
+    }
 
     /** @return The first op of the graph the backend cannot run, as "OP (types)", or empty. */
     std::string firstUnsupportedOp(struct ggml_cgraph* graph) const;

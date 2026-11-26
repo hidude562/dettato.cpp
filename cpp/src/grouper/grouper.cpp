@@ -827,7 +827,7 @@ std::unique_ptr<TapSink> Grouper::makeStoreSink() const
 }
 
 GroupFeatures Grouper::featuresFromStore(const float* y, size_t n, const std::vector<std::array<double, 3>>& notes_y, TapSink& store,
-                                         const Maps& maps2, Transcriber& tr) const
+                                         const Maps& maps2, Transcriber& tr, const std::function<bool(float)>& progress) const
 {
     auto* st = dynamic_cast<StoreSink*>(&store);
     DTT_CHECK(st != nullptr, "featuresFromStore needs the sink made by makeStoreSink()");
@@ -922,6 +922,7 @@ GroupFeatures Grouper::featuresFromStore(const float* y, size_t n, const std::ve
         ro.sink = &sink;
         ro.tap_mask = (1u << TapSink::HIDDEN) | (1u << TapSink::STEM);
         ro.only = &only;
+        ro.progress = progress;
         tr.run(y, n, ro);
         const auto X = sink.taps();
         for (size_t q = 0; q < missing.size(); q++) {
@@ -989,7 +990,7 @@ Grouper::Retune Grouper::retune(const float* x16, size_t n) const
 }
 
 // ------------------------------------------------------------------------------------------------------- predict
-GroupPredictions Grouper::predict(const float* y, size_t n, const GroupFeatures& f) const
+GroupPredictions Grouper::predict(const float* y, size_t n, const GroupFeatures& f, const std::function<bool(float)>& progress) const
 {
     const int N = f.n, K = mNet->nInst(), E = mNet->embDim(), D = mNet->d(), OD = mNet->outDim();
     const int TD = N_TAPS * mNet->tapDim();
@@ -1132,6 +1133,9 @@ GroupPredictions Grouper::predict(const float* y, size_t n, const GroupFeatures&
                 }
             }
             P.wins.push_back(std::move(gw));
+        }
+        if (progress && !progress(static_cast<float>(bi + nb) / static_cast<float>(jobs.size()))) {
+            throw Cancelled();
         }
     }
     P.probs.resize(static_cast<size_t>(N) * K);

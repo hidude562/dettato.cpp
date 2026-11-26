@@ -124,9 +124,14 @@ TEST_CASE("a tone sequence comes out as its notes", "[model]")
     CHECK(p.device().backend == "CPU");
     const auto x = testSignal(44100.0);
 
-    std::vector<float> overall;
+    std::vector<float> overall, grouping;
     dtt::TranscribeOptions o;
-    o.on_progress = [&](const dtt::Progress& pr) { overall.push_back(pr.overall); };
+    o.on_progress = [&](const dtt::Progress& pr) {
+        overall.push_back(pr.overall);
+        if (pr.stage == dtt::Stage::Grouping) {
+            grouping.push_back(pr.stage_fraction);
+        }
+    };
     const auto r = p.transcribe(x, 44100.0, o);
     REQUIRE(r.has_value());
     CHECK(r->seconds == 8.0);
@@ -146,6 +151,9 @@ TEST_CASE("a tone sequence comes out as its notes", "[model]")
     REQUIRE(!overall.empty());
     CHECK(std::is_sorted(overall.begin(), overall.end()));
     CHECK(overall.back() <= 1.0f);
+    // the grouper reports its progress too, after each batch of windows, not only when its stage starts
+    CHECK(grouping.size() >= 2);
+    CHECK(std::is_sorted(grouping.begin(), grouping.end()));
 
     // at 16 kHz (no drums at that rate): the same notes
     std::vector<float> x16 = testSignal(16000.0);
@@ -307,7 +315,9 @@ TEST_CASE("the first GPU gives the CPU's notes", "[model][gpu]")
     const double waited = std::chrono::duration<double>(std::chrono::steady_clock::now() - *asked).count();
     std::printf("GPU cancel: returned %.2f s after should_cancel turned true behind the transcriber\n", waited);
     CHECK(cancelled.error() == dtt::Error::Cancelled);
-    CHECK(waited < 3.0);
+    // a cancel waits for the network call in flight on each thread (the grouper's and the drum model's): a fraction of
+    // a second on a desktop GPU, seconds on a slow or busy one (3.9 s seen on an Apple Silicon Mac running other jobs)
+    CHECK(waited < 10.0);
     const auto again = g->transcribe(x, 44100.0); // and the pipeline still works
     REQUIRE(again.has_value());
     CHECK(pitched(*again).size() == ng);

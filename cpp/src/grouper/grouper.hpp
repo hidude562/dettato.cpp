@@ -8,6 +8,7 @@
 //   ggml backend; front end on the CPU, front.hpp) -> per-note probabilities / embeddings -> decode.hpp -> tracks.
 
 #include <array>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -81,13 +82,16 @@ public:
      * over just the hop-0.5 windows covering them (tr.run with RunOptions::only). Bit-identical to features().
      */
     GroupFeatures featuresFromStore(const float* y, size_t n, const std::vector<std::array<double, 3>>& notes_y, TapSink& store,
-                                    const Maps& maps2, Transcriber& tr) const;
+                                    const Maps& maps2, Transcriber& tr, const std::function<bool(float)>& progress = {}) const;
 
     // ------------------------------------------------------------------ steps (exposed for the parity tests)
     /** Pass 2 + gather on audio y: notes (N, 3) on y's time axis. */
     GroupFeatures features(const float* y, size_t n, const std::vector<std::array<double, 3>>& notes, Transcriber& tr) const;
-    /** Grouper.predict over a song: audio y (16 kHz) and its features. */
-    GroupPredictions predict(const float* y, size_t n, const GroupFeatures& f) const;
+    /**
+     * Grouper.predict over a song: audio y (16 kHz) and its features. progress(fraction) after each batch of windows;
+     * returning false cancels (throws Cancelled), as in Transcriber::run. featuresFromStore's reports its recompute.
+     */
+    GroupPredictions predict(const float* y, size_t n, const GroupFeatures& f, const std::function<bool(float)>& progress = {}) const;
     /** decode + Grouper._tracks: times are multiplied by r. */
     std::vector<GroupTrack> tracks(const GroupFeatures& f, const GroupPredictions& P, double r, GroupDecodeTrace* trace = nullptr) const;
 

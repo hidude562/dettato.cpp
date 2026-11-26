@@ -91,6 +91,7 @@ private:
     int mSampleRate = 44100;
     int mMinSourceRate = 40000;
     int mThreads = 1;
+    const Backend* mBe = nullptr; // for the cancel check between the host steps
 };
 
 } // namespace dtt
