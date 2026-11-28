@@ -51,7 +51,7 @@ public:
      * Song frames [t0, t1) are final: no later window touches them, and maps rows t < t1 hold their final (normalised)
      * values. Called after each batch, in order, ending with t1 = maps.T. wsum[t] (t < t1) is the Hann weight sum.
      */
-    virtual void framesFinal(int t0, int t1, const Maps& maps, const std::vector<float>& wsum) {}
+    virtual void framesFinal(int /*t0*/, int /*t1*/, const Maps& /*maps*/, const std::vector<float>& /*wsum*/) {}
     static constexpr int HIDDEN = 0;
     static constexpr int STEM = 1;
 };

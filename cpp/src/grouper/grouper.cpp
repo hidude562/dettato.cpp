@@ -141,7 +141,7 @@ namespace
             }
         }
 
-        void window(int tap, int g0, int a, int b, const float* w, const float* data, int C, int L, int Fw) override
+        void window(int tap, int g0, int a, int b, const float* w, const float* data, int C, int L, int /*Fw*/) override
         {
             DTT_CHECK(C == mC && L == mL, "tap shape %d x %d, expected %d x %d", C, L, mC, mL);
             if (tap != HIDDEN && tap != STEM) {
@@ -192,7 +192,7 @@ namespace
             }
         }
 
-        void framesFinal(int t0, int t1, const Maps& maps, const std::vector<float>& wsum) override
+        void framesFinal(int t0, int t1, const Maps& /*maps*/, const std::vector<float>& /*wsum*/) override
         {
             if (!mF16) {
                 return;
@@ -673,7 +673,7 @@ namespace
             mPeak = std::max(mPeak, bytes());
         }
 
-        void framesFinal(int t0, int t1, const Maps& maps, const std::vector<float>& wsum) override
+        void framesFinal(int t0, int t1, const Maps& maps, const std::vector<float>& /*wsum*/) override
         {
             if (mC == 0) {
                 return; // no taps (the run had no sink taps)

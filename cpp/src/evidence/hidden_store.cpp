@@ -69,7 +69,7 @@ void HiddenStore::ensureRing(int upto)
     mRingPeak = std::max(mRingPeak, static_cast<size_t>(mR));
 }
 
-void HiddenStore::window(int tap, int g0, int a, int b, const float* w, const float* data, int C, int L, int Fw)
+void HiddenStore::window(int tap, int g0, int a, int b, const float* w, const float* data, int C, int L, int /*Fw*/)
 {
     if (tap != HIDDEN || b <= a) {
         return;
@@ -231,7 +231,7 @@ void HiddenStore::process(int t, const std::vector<float>& wsum)
     std::memset(acc, 0, fs * sizeof(float));
 }
 
-void HiddenStore::framesFinal(int t0, int t1, const Maps& maps, const std::vector<float>& wsum)
+void HiddenStore::framesFinal(int /*t0*/, int t1, const Maps& maps, const std::vector<float>& wsum)
 {
     if (mC == 0) {
         return; // no hidden tap was delivered
