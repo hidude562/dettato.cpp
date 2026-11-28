@@ -4,15 +4,15 @@
 //
 // GCC and Clang answer them with __builtin_cpu_supports, whose CPU table lives in libgcc or compiler-rt. clang-cl (Clang
 // with the MSVC ABI, which is how NeuralNote builds this library) links neither, so there the same bits come from cpuid
-// and xgetbv. MSVC's cl compiles none of the dispatched loops.
+// and xgetbv. MSVC's cl compiles none of the dispatched loops, so nothing is defined for it.
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && defined(__clang__)
 #include <intrin.h>
 #endif
 
 namespace dtt::cpu
 {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && defined(__clang__)
     namespace detail
     {
         struct Features {
@@ -57,7 +57,7 @@ namespace dtt::cpu
     inline bool hasAvx2() { return detail::features().avx2; }
     inline bool hasFma() { return detail::features().fma; }
     inline bool hasF16c() { return detail::features().f16c; }
-#else
+#elif defined(__GNUC__) || defined(__clang__)
     inline bool hasAvx() { return __builtin_cpu_supports("avx"); }
     inline bool hasAvx2() { return __builtin_cpu_supports("avx2"); }
     inline bool hasFma() { return __builtin_cpu_supports("fma"); }
