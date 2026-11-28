@@ -116,7 +116,7 @@ namespace
     {
     public:
         GatherSink(const std::vector<Span>& sp, int C, int T, int L, const std::vector<float>& ws, bool f16)
-            : mSp(sp), mC(C), mT(T), mL(L), mWs(ws), mF16(f16)
+            : mSp(sp), mC(C), mL(L), mWs(ws), mF16(f16)
         {
             const size_t n = sp.size();
             for (const Span& s : sp) {
@@ -273,7 +273,7 @@ namespace
 
     private:
         const std::vector<Span>& mSp;
-        int mC, mT, mL;
+        int mC, mL;
         const std::vector<float>& mWs;
         bool mF16;
         std::vector<int> mT0;

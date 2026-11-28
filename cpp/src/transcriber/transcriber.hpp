@@ -119,7 +119,6 @@ public:
     void windowHcqt(const float* x, float* out) const;
 
 private:
-    const Backend& mBe;
     Hcqt mHcqt;
     std::unique_ptr<LaneNet> mNet;
     double mHop = 0.02;

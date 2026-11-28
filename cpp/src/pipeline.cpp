@@ -65,13 +65,15 @@ namespace
      * so without this the process grows with every call (measured: 0.8 -> 2.0 GB over 16 calls; flat with it). Other
      * allocators need nothing.
      */
-    struct HeapTrim {
-        ~HeapTrim()
-        {
+    void trimHeap()
+    {
 #if defined(__GLIBC__)
-            malloc_trim(0);
+        malloc_trim(0);
 #endif
-        }
+    }
+
+    struct HeapTrim {
+        ~HeapTrim() { trimHeap(); }
     };
 
     constexpr double MIN_END_S = 0.03;        // every pitched note lasts at least 30 ms before grouping
@@ -413,7 +415,7 @@ std::expected<Transcription, Error> Pipeline::transcribe(std::span<const float> 
                                                             [&](float g) { return report(Stage::Grouping, 0.5f * g); });
             gr_sink.reset();
             I.tr.reset(); // its last use
-            HeapTrim{};   // and the buffers of the pass
+            trimHeap();   // and the buffers of the pass
             lap("grouper features (store)");
             const GroupPredictions P = I.gr->predict(y.data(), y.size(), f, [&](float g) { return report(Stage::Grouping, 0.5f + 0.5f * g); });
             tracks = I.gr->tracks(f, P, rt.r);

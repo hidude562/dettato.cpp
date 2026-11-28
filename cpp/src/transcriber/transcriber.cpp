@@ -16,7 +16,7 @@ namespace dtt
 {
 
 Transcriber::Transcriber(const ModelFile& mf, const Backend& be, int batch, LaneNet::Taps taps)
-    : mBe(be), mHcqt(mf, "tr"), mTaps(taps)
+    : mHcqt(mf, "tr"), mTaps(taps)
 {
     mHop = 0.01 * 2; // model.hop_out = 0.01 * t_stride, bit for bit
     const int frames10 = static_cast<int>(std::lround(WIN_S * SR)) / Hcqt::HOP;

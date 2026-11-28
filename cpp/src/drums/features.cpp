@@ -146,7 +146,7 @@ void DrumFeatures::logspec(const float* x, size_t n, int frames, const Spec& s, 
             pocketfft::shape_t shape = {static_cast<size_t>(nf), static_cast<size_t>(N)};
             pocketfft::stride_t sin = {static_cast<ptrdiff_t>(N * sizeof(float)), sizeof(float)};
             pocketfft::stride_t sout = {static_cast<ptrdiff_t>(nb * sizeof(std::complex<float>)), sizeof(std::complex<float>)};
-            pocketfft::r2c(shape, sin, sout, {1}, pocketfft::FORWARD, buf.data(), spec.data(), 1.0f, 1);
+            pocketfft::r2c(shape, sin, sout, 1, pocketfft::FORWARD, buf.data(), spec.data(), 1.0f, 1);
             for (int k = 0; k < nf; k++) {
                 const std::complex<float>* sp = spec.data() + static_cast<size_t>(k) * nb;
                 for (int b = 0; b < nb; b++) {

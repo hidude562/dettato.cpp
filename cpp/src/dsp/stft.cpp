@@ -49,7 +49,7 @@ void PowerStft::transform(const float* x, size_t n, int n_frames, float* out, bo
         pocketfft::shape_t shape = {static_cast<size_t>(nf), static_cast<size_t>(N)};
         pocketfft::stride_t sin = {static_cast<ptrdiff_t>(N * sizeof(float)), sizeof(float)};
         pocketfft::stride_t sout = {static_cast<ptrdiff_t>(nb * sizeof(std::complex<float>)), sizeof(std::complex<float>)};
-        pocketfft::r2c(shape, sin, sout, {1}, pocketfft::FORWARD, frames.data(), spec.data(), 1.0f, 1);
+        pocketfft::r2c(shape, sin, sout, 1, pocketfft::FORWARD, frames.data(), spec.data(), 1.0f, 1);
         for (int k = 0; k < nf; k++) {
             const std::complex<float>* s = spec.data() + static_cast<size_t>(k) * nb;
             float* o = out + static_cast<size_t>(f0 + k) * nb;

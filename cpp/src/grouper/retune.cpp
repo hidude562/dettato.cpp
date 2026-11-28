@@ -186,7 +186,7 @@ void tuning(const float* y, size_t n, double& cents_out, double& strength)
         pocketfft::shape_t shape = {nf, static_cast<size_t>(N_FFT)};
         pocketfft::stride_t sin = {static_cast<ptrdiff_t>(N_FFT * sizeof(float)), sizeof(float)};
         pocketfft::stride_t sout = {static_cast<ptrdiff_t>(nb * sizeof(std::complex<float>)), sizeof(std::complex<float>)};
-        pocketfft::r2c(shape, sin, sout, {1}, pocketfft::FORWARD, frames.data(), spec.data(), 1.0f, 1);
+        pocketfft::r2c(shape, sin, sout, 1, pocketfft::FORWARD, frames.data(), spec.data(), 1.0f, 1);
         S.assign(static_cast<size_t>(nb) * nf, 0.0f);
         for (size_t k = 0; k < nf; k++) {
             for (int b = 0; b < nb; b++) {
