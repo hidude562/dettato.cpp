@@ -1,4 +1,5 @@
 #include "evidence/repair.hpp"
+#include "cpu_features.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -93,7 +94,7 @@ namespace
 float sleefExpF(float d)
 {
 #if defined(DTT_FMA_DISPATCH)
-    static const bool hw = __builtin_cpu_supports("fma");
+    static const bool hw = cpu::hasFma();
     return hw ? sleefExpHw(d) : sleefExpSoft(d);
 #else
     return sleefExpSoft(d);

@@ -21,6 +21,7 @@
 #endif
 
 #include "grouper/decode.hpp"
+#include "cpu_features.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -151,7 +152,7 @@ namespace
     __attribute__((target("avx2,fma"))) void gramF64Fma(const double* aT, int m, int K, double* G) { gramImpl(aT, m, K, G); }
     bool cpuFma()
     {
-        static const bool ok = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+        static const bool ok = cpu::hasAvx2() && cpu::hasFma();
         return ok;
     }
 #endif

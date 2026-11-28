@@ -74,7 +74,10 @@ faster.
   output on the CPU and on Vulkan is unchanged. The transcriber uses ggml's flash attention where the backend supports it
   and the explicit softmax otherwise.
 - **Windows**: CI builds with MSVC, CPU only and with the Vulkan backend (Vulkan SDK 1.4.363, Ninja, from a Visual
-  Studio developer prompt so that ggml's shader generator finds `cl`), and runs the tests on the CPU; Vulkan has not
+  Studio developer prompt so that ggml's shader generator finds `cl`), and with clang-cl and lld-link, which is how
+  NeuralNote builds it. It runs the tests on the CPU; Vulkan has not
   run on a Windows GPU yet. With its own ggml, dettato.cpp delay-loads `vulkan-1.dll` and checks for it before the first
   Vulkan call, so a Vulkan build still starts, on the CPU, on a machine without Vulkan; inside a host that brings ggml
-  (NeuralNote, through muscriptor.cpp) the same check applies. The host loops use their portable scalar paths there.
+  (NeuralNote, through muscriptor.cpp) the same check applies. With MSVC's `cl` the host loops use their portable scalar
+  paths. With clang-cl they pick their FMA / AVX2 versions at run time from `cpuid`, because clang-cl links neither libgcc
+  nor compiler-rt, which hold `__builtin_cpu_supports`'s CPU table.

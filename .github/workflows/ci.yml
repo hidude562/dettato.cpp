@@ -180,3 +180,33 @@ jobs:
         env:
           DETTATO_TEST_MODEL: ${{ github.workspace }}/models/dettato-f16.gguf
         run: ./build/tests/dettato_tests "[model]" --durations yes
+
+  windows-clang-cl:
+    name: windows-clang-cl (CPU, with the model tests; the compiler NeuralNote uses)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure and build (clang-cl and lld-link, Ninja, from the Visual Studio environment)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cmake -S cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDETTATO_VULKAN=OFF -DCMAKE_C_COMPILER="C:/Program Files/LLVM/bin/clang-cl.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/LLVM/bin/clang-cl.exe" -DCMAKE_LINKER="C:/Program Files/LLVM/bin/lld-link.exe" || exit /b 1
+          cmake --build build --parallel 4 || exit /b 1
+
+      - name: Tests without weights
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Cache the GGUF
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: dettato-gguf-${{ hashFiles('py/fetch.py') }}
+
+      - name: Fetch the GGUF
+        run: python py/fetch.py models
+
+      - name: Tests with the model (CPU)
+        env:
+          DETTATO_TEST_MODEL: ${{ github.workspace }}/models/dettato-f16.gguf
+        run: ./build/tests/dettato_tests "[model]" --durations yes

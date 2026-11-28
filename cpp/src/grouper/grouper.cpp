@@ -1,4 +1,5 @@
 #include "grouper/grouper.hpp"
+#include "cpu_features.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -584,7 +585,7 @@ namespace
         }
         divScalar(dst + i, src + i, dv, n - i);
     }
-    const bool HAVE_F16C = __builtin_cpu_supports("avx") && __builtin_cpu_supports("f16c");
+    const bool HAVE_F16C = cpu::hasAvx() && cpu::hasF16c();
     inline void accumHalf(uint16_t* dst, const float* src, float w, size_t n)
     {
         HAVE_F16C ? accumF16C(dst, src, w, n) : accumScalar(dst, src, w, n);
